@@ -47,8 +47,29 @@ for (const t of D.TERMS) ok(t.d.length >= 10, `term ${t.t}: definition too short
 
 // 規模の下限（目標）
 ok(D.LESSONS.length >= 12, `lessons ${D.LESSONS.length} < 12`);
-ok(D.QUESTIONS.length >= 60, `questions ${D.QUESTIONS.length} < 60`);
+ok(D.QUESTIONS.length >= 55 && D.QUESTIONS.length <= 75, `questions ${D.QUESTIONS.length} not in 55..75`);
 ok(D.TERMS.length >= 60, `terms ${D.TERMS.length} < 60`);
+
+// 選択肢の偏りチェック（恒常）: 正解が「唯一最長」の割合と正解位置の分布
+{
+  const Q = D.QUESTIONS;
+  const len = s => [...s].length;
+  let uniqueLongest = 0;
+  const dist = [0, 0, 0, 0];
+  for (const q of Q) {
+    dist[q.a]++;
+    const L = q.c.map(len);
+    const max = Math.max(...L);
+    if (L[q.a] === max && L.filter(x => x === max).length === 1) uniqueLongest++;
+  }
+  const ratio = uniqueLongest / Q.length;
+  console.log(`bias: uniqueLongestCorrect=${uniqueLongest}/${Q.length} (${(ratio * 100).toFixed(1)}%) answerDist=${dist.join(",")}`);
+  ok(ratio <= 0.35, `correct is uniquely longest in ${(ratio * 100).toFixed(1)}% > 35%`);
+  for (let i = 0; i < 4; i++) {
+    const r = dist[i] / Q.length;
+    ok(r >= 0.15 && r <= 0.35, `answer position ${i} ratio ${(r * 100).toFixed(1)}% outside 25%±10%`);
+  }
+}
 
 // 全カテゴリに各コンテンツが存在する
 for (const c of cats) {

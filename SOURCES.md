@@ -57,3 +57,18 @@
 
 ## 使わなかった情報
 - setBatchMode「20倍」等の具体的倍率、Otsuの正解率87%等の数値は二次情報/版依存のため採用しなかった。
+
+## 第2ラウンド追加（2026-11-06）
+9. Subtract Background（imagejdocu）
+   https://imagejdocu.list.lu/gui/process/subtract_background
+   - ローリングボールで滑らかな背景を推定して差し引く。半径は「背景でない最大の対象」以上の大きさが目安。Light Background、Create Background、Disable Smoothing の各オプション。User Guide 29.14（Process Menu）でも同内容を確認。
+10. Z Project（imagej.net Z-functions）
+    https://imagej.net/imaging/z-functions
+    - Image > Stacks > Z Project。投影方式は Average / Maximum / Minimum / Sum Slices / Standard Deviation / Median の6種。開始・終了スライスを指定する。
+11. チャンネルの分割・合成（MBF ImageJ マニュアル、imagej.net 収載）
+    https://imagej.net/mbf/colour_image_processi.htm
+    - Image > Color > Split Channels（RGB分割）、Merge Channels系の合成、コンポジット画像はチャンネルを分離保持し表示オン/オフ可。
+12. Batch Processing（ImageJ公式アーカイブ）
+    https://imagej.github.io/imagej-wiki-static/Batch_mode.html
+    - Process > Batch > Macro。入力・出力ディレクトリと出力形式を指定し、マクロを全画像へ適用。公式Batch Processing文書（downloads.imagej.net）でも「Output未指定では保存されない」を確認。
+    - Scale Bar は既存の出典3（imagejdocu Tools: Widthは校正単位、Heightはピクセル、Font Size/Color/Location/Hide Text/Bold Text）で裏取り。
