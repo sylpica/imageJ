@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ImageJ学習アプリ | 四択問題・教科書・用語集</title>
+<meta name="description" content="ImageJ/Fijiの基礎から実務までを学ぶ無料・ログイン不要の学習アプリ。公式ドキュメントに基づくレッスン、四択問題、用語集。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">IJ</span><span class="brandname">ImageJ学習</span></div>
+  <nav class="topnav" aria-label="表示切替">
+    <button id="btnLesson" class="tab active" type="button" aria-pressed="true">教科書</button>
+    <button id="btnQuiz" class="tab" type="button" aria-pressed="false">四択問題 <span id="quizBadge" class="badge"></span></button>
+    <button id="btnGloss" class="tab" type="button" aria-pressed="false">用語集</button>
+  </nav>
+  <div class="progress" aria-label="学習進捗"><span id="progText"></span><span class="bar"><span id="progBar"></span></span></div>
+</header>
+
+<div class="toolbar">
+  <label>カテゴリ
+    <select id="catFilter" aria-label="カテゴリ絞り込み"></select>
+  </label>
+  <label class="search">検索
+    <input id="kwSearch" type="search" placeholder="キーワードで絞り込み" aria-label="キーワード検索">
+  </label>
+  <span id="countText" class="count" aria-live="polite"></span>
+</div>
+
+<main id="lessonView" class="layout">
+  <aside class="side" aria-label="レッスン一覧">
+    <ol id="lessonList" class="item-list"></ol>
+    <button id="resetBtn" class="ghost" type="button">進捗をリセット</button>
+  </aside>
+  <section class="panel" aria-live="polite">
+    <div class="panel-head">
+      <p id="lessonMeta" class="meta"></p>
+      <h1 id="lessonTitle"></h1>
+      <p id="lessonLead" class="lead"></p>
+    </div>
+    <div id="lessonBody" class="body"></div>
+    <div class="panel-foot">
+      <button id="prevBtn" class="btn" type="button">← 前へ</button>
+      <label class="done"><input type="checkbox" id="doneCheck"> このレッスンを完了にする</label>
+      <button id="nextBtn" class="btn primary" type="button">次へ →</button>
+    </div>
+  </section>
+</main>
+
+<main id="quizView" class="layout single" hidden>
+  <section class="panel" aria-live="polite">
+    <div class="panel-head">
+      <p class="meta" id="quizMeta"></p>
+      <h1>四択問題</h1>
+    </div>
+    <div id="quizBody" class="body"></div>
+    <div class="panel-foot">
+      <button id="quizPrev" class="btn" type="button">← 前の問題</button>
+      <span id="quizScore" class="score">未回答</span>
+      <button id="quizRetry" class="btn" type="button">最初からやり直す</button>
+      <button id="quizNext" class="btn primary" type="button">次の問題 →</button>
+    </div>
+  </section>
+</main>
+
+<main id="glossView" class="layout single" hidden>
+  <section class="panel" aria-live="polite">
+    <div class="panel-head">
+      <p class="meta">用語集</p>
+      <h1>用語集</h1>
+    </div>
+    <div id="glossBody" class="body"></div>
+    <div class="panel-foot">
+      <button id="backLesson2" class="btn primary" type="button">教科書に戻る</button>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>本アプリは学習用です。内容は ImageJ 公式ドキュメント（imagej.net / ImageJ User Guide）等で裏取りした範囲に限っており、各項目に出典を示しています。実際の解析条件は対象画像と目的に応じて検証してください。ImageJ は Wayne Rasband 氏らによるパブリックドメインのソフトウェアです。</p>
+</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
