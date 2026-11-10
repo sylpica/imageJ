@@ -34,9 +34,22 @@ function srcUrl(k){ return SRC[k] || null; }
 
 /* ---------- store ---------- */
 var KEY = "ij-ref-v2";
-var store = { hist:{}, bm:[], lessonDone:[], docBm:[], lastDoc:{}, macroDraft:"" };
-try { var raw = localStorage.getItem(KEY); if (raw) { var p = JSON.parse(raw); if (p && typeof p === "object") store = Object.assign(store, p); } } catch(e){}
-function save(){ try { localStorage.setItem(KEY, JSON.stringify(store)); } catch(e){} }
+var store = { hist:{}, bm:[], lessonDone:[], docBm:[], lastDoc:{}, macroDraft:null };
+// 保存データが壊れていても起動できるよう、既知のキーは型が合うものだけ取り込む
+try {
+  var raw = localStorage.getItem(KEY);
+  if (raw) {
+    var p = JSON.parse(raw);
+    if (p && typeof p === "object" && !Array.isArray(p)) Object.keys(p).forEach(function(k){
+      var v = p[k], d = store[k];
+      if (!(k in store)) store[k] = v;
+      else if (k === "macroDraft") { if (typeof v === "string") store[k] = v; }
+      else if (Array.isArray(d) ? Array.isArray(v) : (v && typeof v === "object" && !Array.isArray(v))) store[k] = v;
+    });
+    Object.keys(store.hist).forEach(function(k){ var h = store.hist[k]; if (!h || typeof h !== "object") delete store.hist[k]; });
+  }
+} catch(e){}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(store)); return true; } catch(e){ return false; } }
 
 /* ---------- utils ---------- */
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(m){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]; }); }
@@ -378,6 +391,7 @@ function vFunction(name){
     '<p class="fn-sig">' + esc(f.sig) + "</p>" + paras([f.desc], 6);
   if (f.ret) html += '<div class="box box-points"><h3>戻り値</h3><p>' + linkTerms(f.ret, 4) + "</p></div>";
   if (f.ex) html += '<h2>使用例</h2><pre class="code">' + esc(f.ex) + "</pre>";
+  html += '<p><a class="btn small" href="#/practice/' + encodeURIComponent(f.name) + '">マクロ練習で書く</a></p>';
   if (f.note) html += '<div class="box box-caution"><h3>注意</h3><p>' + linkTerms(f.note, 4) + "</p></div>";
   if (f.ver) html += '<p class="meta-line">バージョン要件：' + esc(f.ver) + "</p>";
   html += '<p class="src-line">出典：<a href="https://imagej.net/ij/developer/macro/functions.html" target="_blank" rel="noopener">ImageJ公式「Built-in Macro Functions」</a><wbr>（説明は独自要約）</p></article>';
@@ -436,34 +450,73 @@ var MACRO_TEMPLATES = [
 "run(\"Z Project...\", \"projection=[Max Intensity]\");\n" +
 "run(\"Split Channels\");\n" }
 ];
-var prac = { cat: "all", kw: "", fn: null, tab: "code" };
-function pracBalance(code){
-  var pairs = { "(": 0, "{": 0, "[": 0 }, inStr = false, inCom = false, inBlock = false, esc2 = false;
+var PRAC_STARTER =
+  "// 右の関数リファレンスを見ながらマクロを書けます\n" +
+  "// コード中の関数名をダブルクリックすると、右に説明が出ます\n\n" +
+  "title = getTitle();\nprint(title);\nrun(\"Measure\");\n";
+var prac = { cat: "all", kw: "", fn: null, tab: "code", selS: null, selE: null, scroll: 0 };
+// 括弧・文字列・コメントの静的チェック（ImageJ マクロの字句規則に合わせる）：
+// 文字列は " と ' の両方で囲め、行をまたがない。// と /* */ はコメント。
+// 問題がなければ null、あれば最初の問題を位置つきで返す。
+function pracCheck(code){
+  var OPEN = { "(": 1, "{": 1, "[": 1 }, CLOSE = { ")": "(", "}": "{", "]": "[" };
+  var stack = [], q = null, strAt = -1, inCom = false, inBlock = false, blockAt = -1, bs = false;
   for (var i = 0; i < code.length; i++){
     var c = code[i], n = code[i + 1];
     if (inBlock){ if (c === "*" && n === "/"){ inBlock = false; i++; } continue; }
     if (inCom){ if (c === "\n") inCom = false; continue; }
-    if (inStr){ if (esc2) esc2 = false; else if (c === "\\") esc2 = true; else if (c === "\"") inStr = false; continue; }
-    if (c === "/" && n === "*"){ inBlock = true; i++; continue; }
-    if (c === "/" && n === "/"){ inCom = true; continue; }
-    if (c === "\""){ inStr = true; continue; }
-    if (c === "(") pairs["("]++; else if (c === ")") pairs["("]--;
-    else if (c === "{") pairs["{"]++; else if (c === "}") pairs["{"]--;
-    else if (c === "[") pairs["["]++; else if (c === "]") pairs["["]--;
+    if (q){
+      if (c === "\n" || c === "\r") return { kind: "str", at: strAt };
+      if (bs) bs = false; else if (c === "\\") bs = true; else if (c === q) q = null;
+      continue;
+    }
+    if (c === "/" && n === "*"){ inBlock = true; blockAt = i; i++; continue; }
+    if (c === "/" && n === "/"){ inCom = true; i++; continue; }
+    if (c === "\"" || c === "'"){ q = c; strAt = i; continue; }
+    if (OPEN[c]) stack.push({ ch: c, at: i });
+    else if (CLOSE[c]){
+      var top = stack.pop();
+      if (!top) return { kind: "extra", ch: c, at: i };
+      if (top.ch !== CLOSE[c]) return { kind: "mismatch", ch: c, at: i, open: top.ch, openAt: top.at };
+    }
   }
-  return pairs;
+  if (q) return { kind: "str", at: strAt };
+  if (inBlock) return { kind: "block", at: blockAt };
+  if (stack.length){ var t = stack[stack.length - 1]; return { kind: "open", ch: t.ch, at: t.at, more: stack.length - 1 }; }
+  return null;
 }
+function pracLine(code, at){ return code.slice(0, at).split("\n").length; }
+function pracIssueText(code, r){
+  var L = pracLine(code, r.at);
+  if (r.kind === "extra") return L + "行目の " + r.ch + " に対応する開き括弧がありません";
+  if (r.kind === "mismatch") return L + "行目の " + r.ch + " が " + pracLine(code, r.openAt) + "行目の " + r.open + " と対応していません";
+  if (r.kind === "open") return L + "行目の " + r.ch + " が閉じていません" + (r.more ? "（ほかに " + r.more + " 個）" : "");
+  if (r.kind === "str") return L + "行目の文字列が閉じていません";
+  return L + "行目の /* が閉じていません";
+}
+// 書式から挿入用の文を作る：省略可能部 [ ] と可変長の「, ...」を落とし、末尾に ; を付ける
+function pracSigStatement(sig){
+  var s = sig.replace(/\[[^\]]*\]/g, "").replace(/,\s*\.\.\.\s*\)/, ")").replace(/,\s*\)/, ")").replace(/\s+/g, " ").trim();
+  return /;$/.test(s) ? s : s + ";";
+}
+function pracIsPristine(code){
+  return !code.trim() || code === PRAC_STARTER || MACRO_TEMPLATES.some(function(t){ return t.code === code; });
+}
+var pracSaveTimer = null, pracSaveFailed = false;
+function pracFlush(){
+  if (pracSaveTimer){ clearTimeout(pracSaveTimer); pracSaveTimer = null; }
+  pracSaveFailed = !save();
+}
+window.addEventListener("pagehide", function(){ if (pracSaveTimer) pracFlush(); });
+document.addEventListener("visibilitychange", function(){ if (document.visibilityState === "hidden" && pracSaveTimer) pracFlush(); });
 function vPractice(){
   setNav("practice");
-  if (!store.macroDraft) store.macroDraft =
-    "// 右の関数リファレンスを見ながらマクロを書けます\n" +
-    "// コード中の関数名をダブルクリックすると、右に説明が出ます\n\n" +
-    "title = getTitle();\nprint(title);\nrun(\"Measure\");\n";
+  var draft = typeof store.macroDraft === "string" ? store.macroDraft : PRAC_STARTER;
   var html = '<h1 class="page">マクロ練習</h1>' +
     '<div class="prac-tabs" role="tablist">' +
-      '<button type="button" data-ptab="code" class="' + (prac.tab === "code" ? "on" : "") + '">コード</button>' +
-      '<button type="button" data-ptab="ref" class="' + (prac.tab === "ref" ? "on" : "") + '">関数リファレンス</button></div>' +
-    '<div class="prac" data-tab="' + prac.tab + '">' +
+      '<button type="button" role="tab" data-ptab="code">コード</button>' +
+      '<button type="button" role="tab" data-ptab="ref">関数リファレンス</button></div>' +
+    '<div class="prac" id="pracRoot">' +
     '<section class="prac-ed">' +
       '<div class="prac-tools">' +
         '<select id="tplSel" aria-label="テンプレート"><option value="">テンプレート…</option>' +
@@ -473,57 +526,102 @@ function vPractice(){
         '<button type="button" class="mini-btn" id="btnClear">消去</button>' +
         '<span class="prac-stat" id="pracStat"></span></div>' +
       '<div class="ed-wrap"><pre class="ed-gutter" id="edGutter" aria-hidden="true">1</pre>' +
-      '<textarea id="macroEd" spellcheck="false" aria-label="マクロのコード"></textarea></div>' +
+      '<textarea id="macroEd" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="マクロのコード"></textarea></div>' +
     "</section>" +
     '<aside class="prac-ref">' +
       '<div class="prac-ref-tools"><input type="search" id="pracKw" placeholder="関数を検索" value="' + esc(prac.kw) + '" aria-label="関数検索">' +
-      '<div class="chips">' + ['<button type="button" class="chip' + (prac.cat === "all" ? " on" : "") + '" data-pcat="all">すべて</button>']
-        .concat(Object.keys(FCATS).map(function(c){ return '<button type="button" class="chip' + (prac.cat === c ? " on" : "") + '" data-pcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("") + "</div></div>" +
+      '<div class="chips">' + ['<button type="button" class="chip" data-pcat="all">すべて</button>']
+        .concat(Object.keys(FCATS).map(function(c){ return '<button type="button" class="chip" data-pcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("") + "</div></div>" +
       '<div class="prac-ref-body" id="pracRefBody"></div>' +
     "</aside></div>" +
-    '<p class="foot-note">マクロの実行はこのアプリでは行えません。書いたコードは .ijm で保存し、ImageJ / Fiji の Plugins &gt; Macros &gt; Run… から開くか、.ijm ファイルを Fiji のウィンドウへドラッグ＆ドロップして実行してください。下書きはこの端末に自動保存されます。</p>';
+    '<p class="foot-note">マクロの実行はこのアプリでは行えません。書いたコードは .ijm で保存し、Fiji ではファイルをウィンドウへドラッグ＆ドロップ（または File &gt; Open…）してスクリプトエディタで開き、［Run］で実行してください。ImageJ の Plugins &gt; Macros &gt; Run… でも実行できますが、文字列中の日本語は文字化けします。エディタ内の Tab はインデントになり、Esc の後の Tab でフォーカスが移ります。下書きはこの端末に自動保存されます。</p>';
   view.innerHTML = html;
+  var root = document.getElementById("pracRoot");
   var ed = document.getElementById("macroEd"), gut = document.getElementById("edGutter"), stat = document.getElementById("pracStat");
-  ed.value = store.macroDraft;
-  function syncGutter(){
-    var n = ed.value.split("\n").length, s = "";
+  ed.value = draft;
+  if (prac.selS != null && prac.selS <= ed.value.length) ed.setSelectionRange(prac.selS, Math.min(prac.selE, ed.value.length));
+  function remember(){ prac.selS = ed.selectionStart; prac.selE = ed.selectionEnd; prac.scroll = ed.scrollTop; }
+  function setTab(t){
+    prac.tab = t; root.setAttribute("data-tab", t);
+    view.querySelectorAll("[data-ptab]").forEach(function(b){
+      var on = b.getAttribute("data-ptab") === t;
+      b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+  }
+  function setCat(c){
+    prac.cat = c;
+    view.querySelectorAll("[data-pcat]").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-pcat") === c); });
+  }
+  function refresh(){
+    var v = ed.value, n = v.split("\n").length, s = "";
     for (var i = 1; i <= n; i++) s += i + "\n";
     gut.textContent = s; gut.scrollTop = ed.scrollTop;
-    var b = pracBalance(ed.value), bal = [];
-    if (b["("]) bal.push("( が " + b["("]);
-    if (b["{"]) bal.push("{ が " + b["{"]);
-    if (b["["]) bal.push("[ が " + b["["]);
-    stat.textContent = n + " 行" + (bal.length ? " ／ 括弧の対応（目安）：" + bal.join("、") : "");
+    var r = pracCheck(v);
+    stat.innerHTML = esc(n + " 行") +
+      (r ? ' <button type="button" class="prac-issue" id="pracIssue" data-at="' + r.at + '">' + esc(pracIssueText(v, r)) + "</button>" : "") +
+      (pracSaveFailed ? ' <span class="prac-warn">下書きを保存できませんでした</span>' : "");
+    var ib = document.getElementById("pracIssue");
+    if (ib) ib.addEventListener("click", function(){
+      var at = Number(this.getAttribute("data-at"));
+      ed.focus(); ed.setSelectionRange(at, at + 1); remember();
+    });
   }
-  syncGutter();
-  ed.addEventListener("input", function(){ store.macroDraft = ed.value; save(); syncGutter(); });
-  ed.addEventListener("scroll", function(){ gut.scrollTop = ed.scrollTop; });
-  ed.addEventListener("keydown", function(e){
-    if (e.key === "Tab"){
-      e.preventDefault();
-      var s = ed.selectionStart;
-      ed.setRangeText("  ", s, ed.selectionEnd, "end");
+  function onInput(){
+    store.macroDraft = ed.value; remember();
+    if (pracSaveTimer) clearTimeout(pracSaveTimer);
+    pracSaveTimer = setTimeout(function(){ var was = pracSaveFailed; pracFlush(); if (was !== pracSaveFailed) refresh(); }, 400);
+    refresh();
+  }
+  // 範囲 [s, e) を text で置き換える。execCommand が使える環境では Ctrl+Z で取り消せる
+  function edReplace(text, s, e){
+    var before = ed.value, expect = before.slice(0, s) + text + before.slice(e);
+    if (expect === before) return;
+    ed.focus(); ed.setSelectionRange(s, e);
+    try { document.execCommand(text ? "insertText" : "delete", false, text); } catch(_){}
+    if (ed.value !== expect){
+      ed.value = expect; ed.setSelectionRange(s + text.length, s + text.length);
       ed.dispatchEvent(new Event("input"));
     }
+  }
+  setTab(prac.tab); setCat(prac.cat);
+  refresh();
+  ed.scrollTop = prac.scroll || 0; gut.scrollTop = ed.scrollTop;
+  ed.addEventListener("input", onInput);
+  ["select", "keyup", "mouseup", "blur"].forEach(function(ev){ ed.addEventListener(ev, remember); });
+  ed.addEventListener("scroll", function(){ gut.scrollTop = ed.scrollTop; prac.scroll = ed.scrollTop; });
+  var escArmed = false;
+  ed.addEventListener("keydown", function(e){
+    if (e.key === "Escape"){ escArmed = true; return; }
+    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !escArmed){
+      e.preventDefault();
+      edReplace("    ", ed.selectionStart, ed.selectionEnd);
+      return;
+    }
+    escArmed = false;
   });
   ed.addEventListener("dblclick", function(){
     var v = ed.value, s = ed.selectionStart, a = s, z = s;
     while (a > 0 && /[A-Za-z0-9_.]/.test(v[a - 1])) a--;
     while (z < v.length && /[A-Za-z0-9_.]/.test(v[z])) z++;
-    var word = v.slice(a, z);
-    if (word && funcByName(word)){ prac.fn = word; prac.tab = "ref"; vPractice(); }
+    var word = v.slice(a, z).replace(/^\.+|\.+$/g, "");
+    if (word && funcByName(word)){
+      // 調べるための選択で、後の挿入が単語を置き換えないよう、カーソルを単語の後ろに置く
+      ed.setSelectionRange(z, z); remember();
+      prac.fn = word; renderPracRef(); setTab("ref");
+    }
   });
   document.getElementById("tplSel").addEventListener("change", function(){
     if (this.value === "") return;
-    var cur = ed.value;
-    var isStarter = cur.indexOf("右の関数リファレンスを見ながら") >= 0 || MACRO_TEMPLATES.some(function(t){ return t.code === cur; });
-    if (cur.trim() && !isStarter && !window.confirm("現在のコードをテンプレートで置き換えますか？（下書きも置き換わります）")){ this.value = ""; return; }
-    ed.value = MACRO_TEMPLATES[Number(this.value)].code;
-    ed.dispatchEvent(new Event("input"));
+    var t = MACRO_TEMPLATES[Number(this.value)];
     this.value = "";
-    ed.focus();
+    if (!pracIsPristine(ed.value) && !window.confirm("現在のコードをテンプレートで置き換えますか？")) return;
+    edReplace(t.code, 0, ed.value.length);
+    ed.setSelectionRange(0, 0); ed.scrollTop = 0; remember();
   });
-  document.getElementById("btnClear").addEventListener("click", function(){ ed.value = ""; ed.dispatchEvent(new Event("input")); ed.focus(); });
+  document.getElementById("btnClear").addEventListener("click", function(){
+    if (!pracIsPristine(ed.value) && !window.confirm("コードをすべて消去しますか？")) return;
+    edReplace("", 0, ed.value.length);
+  });
   document.getElementById("btnCopy").addEventListener("click", function(){
     var b = this;
     function done(){ b.textContent = "コピーしました"; setTimeout(function(){ b.textContent = "コピー"; }, 1600); }
@@ -531,14 +629,16 @@ function vPractice(){
     else { ed.select(); document.execCommand("copy"); done(); }
   });
   document.getElementById("btnDl").addEventListener("click", function(){
-    var blob = new Blob([ed.value], { type: "text/plain" });
+    // UTF-8（BOMなし）・LF改行のテキストとして保存する
+    var blob = new Blob([ed.value], { type: "text/plain;charset=utf-8" });
     var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = "macro.ijm"; a.click();
+    a.href = URL.createObjectURL(blob); a.download = "macro.ijm";
+    document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
   });
-  view.querySelectorAll("[data-ptab]").forEach(function(b){ b.addEventListener("click", function(){ prac.tab = b.getAttribute("data-ptab"); vPractice(); }); });
+  view.querySelectorAll("[data-ptab]").forEach(function(b){ b.addEventListener("click", function(){ setTab(b.getAttribute("data-ptab")); }); });
   document.getElementById("pracKw").addEventListener("input", function(){ prac.kw = this.value; prac.fn = null; renderPracRef(); });
-  view.querySelectorAll("[data-pcat]").forEach(function(b){ b.addEventListener("click", function(){ prac.cat = b.getAttribute("data-pcat"); prac.fn = null; vPractice(); }); });
+  view.querySelectorAll("[data-pcat]").forEach(function(b){ b.addEventListener("click", function(){ setCat(b.getAttribute("data-pcat")); prac.fn = null; renderPracRef(); }); });
   renderPracRef();
   function renderPracRef(){
     var body = document.getElementById("pracRefBody");
@@ -551,16 +651,18 @@ function vPractice(){
           (f.ret ? '<div class="box box-points"><h3>戻り値</h3><p>' + esc(f.ret) + "</p></div>" : "") +
           (f.ex ? '<h3>使用例</h3><pre class="code">' + esc(f.ex) + "</pre>" : "") +
           (f.note ? '<div class="box box-caution"><h3>注意</h3><p>' + esc(f.note) + "</p></div>" : "") +
+          (f.ver ? '<p class="meta-line">バージョン要件：' + esc(f.ver) + "</p>" : "") +
           '<div class="prac-ins"><button type="button" class="btn" id="insSig">書式を挿入</button>' +
           (f.ex ? '<button type="button" class="btn sub" id="insEx">使用例を挿入</button>' : "") + "</div>";
+        body.scrollTop = 0;
         document.getElementById("pracBack").addEventListener("click", function(){ prac.fn = null; renderPracRef(); });
         document.getElementById("insSig").addEventListener("click", function(){
-          // 書式中の省略可能部 [ ] は落として、そのまま動く形で挿入する
-          var s = f.sig.replace(/\[[^\]]*\]/g, "").replace(/,\s*\)/, ")").replace(/\s+/g, " ");
-          insertCode(/;$/.test(s) ? s : s + ";");
+          var st = pracSigStatement(f.sig), p = st.indexOf("("), q = st.lastIndexOf(")");
+          // 引数部分を選択状態にして、そのまま上書き入力できるようにする
+          insertCode(st, p >= 0 && q > p + 1 ? [p + 1, q] : null);
         });
         var exBtn = document.getElementById("insEx");
-        if (exBtn) exBtn.addEventListener("click", function(){ insertCode(f.ex); });
+        if (exBtn) exBtn.addEventListener("click", function(){ insertCode(f.ex, null); });
         return;
       }
       prac.fn = null;
@@ -576,14 +678,27 @@ function vPractice(){
     }).join("") : '<div class="empty">該当する関数がありません。</div>';
     body.querySelectorAll("[data-fn]").forEach(function(b){ b.addEventListener("click", function(){ prac.fn = b.getAttribute("data-fn"); renderPracRef(); }); });
   }
-  function insertCode(text){
-    var s = ed.selectionStart;
-    var before = ed.value.slice(0, s);
-    var insert = (before && !/\n$/.test(before) ? "\n" : "") + text + "\n";
-    ed.setRangeText(insert, s, ed.selectionEnd, "end");
-    ed.dispatchEvent(new Event("input"));
-    if (window.innerWidth < 860){ prac.tab = "code"; vPractice(); document.getElementById("macroEd").focus(); }
-    else ed.focus();
+  // 選択範囲があればそれを置き換える。選択がなければ、カーソル行を壊さないよう
+  // 空行ならその位置に、そうでなければ行末の次の行に、行のインデントを揃えて挿入する。
+  function insertCode(text, selRel){
+    var v = ed.value, s = ed.selectionStart, e = ed.selectionEnd, insert = text, lead = 0;
+    // 直前の挿入で自動選択した引数部分は「利用者の選択」ではないので、置き換えずに次の行へ挿入する
+    var auto = prac.autoSel && prac.autoSel[0] === s && prac.autoSel[1] === e && prac.autoSel[2] === v;
+    if (auto) e = s;
+    prac.autoSel = null;
+    if (s === e){
+      var ls = v.lastIndexOf("\n", s - 1) + 1, le = v.indexOf("\n", s); if (le < 0) le = v.length;
+      var line = v.slice(ls, le), indent = (line.match(/^[ \t]*/) || [""])[0];
+      var body2 = text.split("\n").join("\n" + indent);
+      if (!line.trim()){ s = ls + indent.length; e = le; insert = body2; }
+      else { s = e = le; insert = "\n" + indent + body2; lead = 1 + indent.length; }
+    }
+    edReplace(insert, s, e);
+    if (selRel){ ed.setSelectionRange(s + lead + selRel[0], s + lead + selRel[1]); prac.autoSel = [ed.selectionStart, ed.selectionEnd, ed.value]; }
+    else ed.setSelectionRange(s + insert.length, s + insert.length);
+    remember();
+    if (window.innerWidth < 860) setTab("code");
+    ed.focus();
   }
 }
 
@@ -865,7 +980,10 @@ function route(){
   else if (head === "quiz") { quiz ? vQuizRun() : vQuizSetup(); }
   else if (head === "docs") vDocs();
   else if (head === "doc" && parts[1]) vDoc(parts[1], parts[2] || null);
-  else if (head === "practice") vPractice();
+  else if (head === "practice"){
+    if (parts[1] && funcByName(decodeURIComponent(parts[1]))){ prac.fn = decodeURIComponent(parts[1]); prac.tab = "ref"; prac.kw = ""; }
+    vPractice();
+  }
   else if (head === "functions") vFunctions();
   else if (head === "function" && parts[1]) vFunction(decodeURIComponent(parts[1]));
   else if (head === "terms") vTerms();

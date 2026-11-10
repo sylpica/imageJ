@@ -16,19 +16,68 @@ const FIGS = new Set(["bitdepth","histogram","threshold","gamma","kernel-blur","
 const L = D.lessons, Q = D.questions, T = D.terms, DOCS = D.docs;
 ok(L.length >= 20 && L.length <= 32, `レッスン数 ${L.length}`);
 ok(Q.length >= 50 && Q.length <= 70, `問題数 ${Q.length}`);
-// マクロ練習のテンプレート・初期コードで使う関数は、関数リファレンスに載っていること（R04整合）
+// 関数リファレンスを公式「Built-in Macro Functions」のスナップショットと照合する（R02/R13）
+// ・関数名が公式に実在すること
+// ・書式の引数個数（省略可能部 [ ] と可変長 ... を除く）が、公式のいずれかの書式と一致すること
+// ・使用例・テンプレート・初期コードが静的チェック（括弧・文字列・コメント）を通り、呼んでいる関数が実在すること
 {
+  const offLines = readFileSync(new URL("./official-functions.txt", import.meta.url), "utf8").split("\n").filter(l => l && !l.startsWith("#"));
+  const offName = s => s.replace(/\s*\(.*$/, "").trim();
+  const argc = sig => {
+    const m = sig.match(/\((.*)\)/); if (!m) return 0;
+    const inner = m[1].replace(/\[[^\]]*\]/g, "").replace(/,?\s*\.\.\.\s*$/, "").trim();
+    if (!inner) return 0;
+    let depth = 0, n = 1, q = null;
+    for (const c of inner) { if (q) { if (c === q) q = null; continue; } if (c === '"' || c === "'") q = c; else if (c === "(") depth++; else if (c === ")") depth--; else if (c === "," && depth === 0) n++; }
+    return n;
+  };
+  const off = new Map();
+  for (const l of offLines) { const k = offName(l); if (!off.has(k)) off.set(k, []); off.get(k).push(l); }
   const appSrc = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-  const seg = appSrc.slice(appSrc.indexOf("var MACRO_TEMPLATES"), appSrc.indexOf("var prac ="));
-  const starter = appSrc.slice(appSrc.indexOf("store.macroDraft ="), appSrc.indexOf("var html", appSrc.indexOf("store.macroDraft =")));
-  const cleaned = (seg + starter).replace(/\\n/g, " ");
+  const grab = name => { const a = appSrc.indexOf("\nfunction " + name + "("); return appSrc.slice(a, appSrc.indexOf("\nfunction ", a + 1)); };
+  const pracCheck = new Function(grab("pracCheck") + "; return pracCheck;")();
+  const pracSigStatement = new Function(grab("pracSigStatement") + "; return pracSigStatement;")();
+  const tplSeg = appSrc.slice(appSrc.indexOf("var MACRO_TEMPLATES"), appSrc.indexOf("];", appSrc.indexOf("var MACRO_TEMPLATES")) + 2);
+  const TPL = new Function(tplSeg + "; return MACRO_TEMPLATES;")();
+  const STARTER = new Function(appSrc.slice(appSrc.indexOf("var PRAC_STARTER"), appSrc.indexOf("\nvar prac =")) + "; return PRAC_STARTER;")();
+  ok(TPL.length === 5, `テンプレート数 ${TPL.length}`);
   const refNames = new Set((D.functions || []).map(f => f.name));
-  const kw = new Set(["if", "for", "while", "function", "return", "switch", "catch"]);
-  const missing = new Set();
-  for (const m of cleaned.matchAll(/\b([A-Za-z][A-Za-z0-9_.]*)\s*\(/g)) {
-    if (!refNames.has(m[1]) && !kw.has(m[1])) missing.add(m[1]);
+  const KW = new Set(["if", "for", "while", "function", "return", "switch", "catch", "do", "else"]);
+  const stripStrCom = code => code.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ").replace(/"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, '""');
+  const calls = code => [...stripStrCom(code).matchAll(/(^|[^A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)\s*\(/g)].map(m => m[2]);
+  const userFns = code => new Set([...stripStrCom(code).matchAll(/function\s+([A-Za-z_][A-Za-z0-9_]*)/g)].map(m => m[1]));
+  for (const f of (D.functions || [])) {
+    ok(off.has(f.name), `関数 ${f.name} が公式一覧に存在しない`);
+    if (off.has(f.name)) {
+      const counts = off.get(f.name).map(argc);
+      const variadic = /\.\.\.\s*\)/.test(f.sig);
+      ok(counts.includes(argc(f.sig)) || (variadic && counts.some(n => n <= argc(f.sig))), `関数 ${f.name} の引数個数 ${argc(f.sig)} が公式 [${off.get(f.name).join(" | ")}] と一致しない`);
+    }
+    const st = pracSigStatement(f.sig);
+    ok(!/\[|\.\.\./.test(st) && pracCheck(st) === null, `関数 ${f.name} の挿入用の文が不正: ${st}`);
+    if (f.ex) {
+      const r = pracCheck(f.ex);
+      ok(r === null, `関数 ${f.name} の使用例が静的チェックで警告される: ${JSON.stringify(r)}`);
+      const uf = userFns(f.ex);
+      for (const c of calls(f.ex)) ok(KW.has(c) || uf.has(c) || off.has(c), `関数 ${f.name} の使用例が公式にない関数 ${c} を呼んでいる`);
+    }
   }
-  ok(missing.size === 0, `テンプレート使用関数がリファレンスに無い: ${[...missing].join(",")}`);
+  for (const [label, code] of [["初期コード", STARTER], ...TPL.map(t => [t.name, t.code])]) {
+    ok(pracCheck(code) === null, `${label} が静的チェックで警告される`);
+    for (const c of calls(code)) {
+      ok(KW.has(c) || off.has(c), `${label} が公式にない関数 ${c} を呼んでいる`);
+      ok(KW.has(c) || refNames.has(c), `${label} の使用関数 ${c} がリファレンスに無い`);
+    }
+  }
+  // 静的チェック自体の境界ケース（R05）
+  const cases = [
+    ['print("(");', null], ["print('(');", null], ['s = "a\\"(";', null], ["// ( {\nx = 1;", null], ["/* (\n{ */ y();", null],
+    ['a = "x // (";', null], ['x = f(1));', "extra"], ["if (a) { b(;", "open"], ["x = (a];", "mismatch"], ['s = "abc;\nprint(s);', "str"],
+    ["/* never closed (", "block"], ["for (i = 0; i < 3; i++) {\n  print(i);\n", "open"]
+  ];
+  for (const [code, kind] of cases) { const r = pracCheck(code); ok(kind === null ? r === null : (r && r.kind === kind), `静的チェック境界 ${JSON.stringify(code)} → ${JSON.stringify(r)}（期待 ${kind}）`); }
+  const r1 = pracCheck("a();\nb(;\n"); ok(r1 && r1.at === 6 && r1.kind === "open", `静的チェックの位置 ${JSON.stringify(r1)}`);
+  console.log(`official=${off.size} names checked=${(D.functions || []).length}`);
 }
 ok(T.length >= 75, `用語数 ${T.length}`);
 ok(!T.some(t => /\(\)/.test(t.t)), "用語集に関数系の項目が残っている");
