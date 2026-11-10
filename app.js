@@ -34,7 +34,7 @@ function srcUrl(k){ return SRC[k] || null; }
 
 /* ---------- store ---------- */
 var KEY = "ij-ref-v2";
-var store = { hist:{}, bm:[], lessonDone:[], docBm:[], lastDoc:{} };
+var store = { hist:{}, bm:[], lessonDone:[], docBm:[], lastDoc:{}, macroDraft:"" };
 try { var raw = localStorage.getItem(KEY); if (raw) { var p = JSON.parse(raw); if (p && typeof p === "object") store = Object.assign(store, p); } } catch(e){}
 function save(){ try { localStorage.setItem(KEY, JSON.stringify(store)); } catch(e){} }
 
@@ -244,6 +244,7 @@ function vHome(){
     '<a class="tile" href="#/quiz"><span class="n">' + QUESTIONS.length + '</span><b>問題</b></a>' +
     '<a class="tile" href="#/docs"><span class="n">' + DOCS.reduce(function(n, c){ return n + c.entries.length; }, 0) + '</span><b>ドキュメント</b></a>' +
     '<a class="tile" href="#/functions"><span class="n">' + FUNCTIONS.length + '</span><b>関数</b></a>' +
+    '<a class="tile" href="#/practice"><span class="n">✎</span><b>マクロ練習</b></a>' +
     '<a class="tile" href="#/terms"><span class="n">' + TERMS.length + '</span><b>用語集</b></a></div>' +
     '<h2 class="sec">実務の疑問から引く</h2><div class="quick"><ul>' +
     '<li><a href="#/doc/D6">Threshold と Convert to Mask は何が違う？</a></li>' +
@@ -383,6 +384,198 @@ function vFunction(name){
   var sameCat = FUNCTIONS.filter(function(x){ return x.cat === f.cat && x.name !== f.name; }).slice(0, 8);
   if (sameCat.length) html += '<h2 class="sec">同じ分類の関数</h2><div class="rel-chips">' + sameCat.map(function(x){ return '<a href="#/function/' + encodeURIComponent(x.name) + '">' + esc(x.name) + "</a>"; }).join("") + "</div>";
   view.innerHTML = html;
+}
+
+/* ---------- macro practice ---------- */
+var MACRO_TEMPLATES = [
+{ name: "雛形：開いている画像をすべて測定", code:
+"// 開いている画像をすべて測定し、結果をCSVで保存する\n" +
+"dir = getDirectory(\"保存先フォルダを選んでください\");\n" +
+"ids = newArray(nImages);\n" +
+"for (i = 0; i < nImages; i++) {\n" +
+"    selectImage(i + 1);\n" +
+"    ids[i] = getImageID();\n" +
+"}\n" +
+"setBatchMode(true);\n" +
+"for (i = 0; i < ids.length; i++) {\n" +
+"    selectImage(ids[i]);\n" +
+"    run(\"Measure\");\n" +
+"}\n" +
+"saveAs(\"Results\", dir + \"results.csv\");\n" +
+"setBatchMode(false);\n" },
+{ name: "雛形：粒子カウント", code:
+"// 8bit化 → 自動閾値 → 二値化 → 分離 → 粒子解析\n" +
+"run(\"8-bit\");\n" +
+"setAutoThreshold(\"Otsu dark\");\n" +
+"run(\"Convert to Mask\");\n" +
+"run(\"Watershed\");\n" +
+"run(\"Analyze Particles...\", \"size=10-Infinity circularity=0.00-1.00 show=Outlines summarize\");\n" },
+{ name: "雛形：ROI Manager の全ROIを測定", code:
+"// ROI Manager に登録した全ROIを順に測定する\n" +
+"n = roiManager(\"count\");\n" +
+"for (i = 0; i < n; i++) {\n" +
+"    roiManager(\"select\", i);\n" +
+"    run(\"Measure\");\n" +
+"}\n" },
+{ name: "雛形：フォルダ一括（スケールバー＋保存）", code:
+"// フォルダ内のTIFFを一括処理して別フォルダへ保存する\n" +
+"dir = getDirectory(\"画像フォルダを選んでください\");\n" +
+"out = getDirectory(\"保存先フォルダを選んでください\");\n" +
+"list = getFileList(dir);\n" +
+"setBatchMode(true);\n" +
+"for (i = 0; i < list.length; i++) {\n" +
+"    if (!endsWith(list[i], \".tif\")) continue;\n" +
+"    open(dir + list[i]);\n" +
+"    run(\"Scale Bar...\", \"width=50 height=8 font=28 color=White background=None location=[Lower Right] bold\");\n" +
+"    saveAs(\"Tiff\", out + list[i]);\n" +
+"    close();\n" +
+"}\n" +
+"setBatchMode(false);\n" },
+{ name: "雛形：Z投影とチャンネル分割", code:
+"// スタックを最大値投影し、チャンネルを分ける\n" +
+"run(\"Z Project...\", \"projection=[Max Intensity]\");\n" +
+"run(\"Split Channels\");\n" }
+];
+var prac = { cat: "all", kw: "", fn: null, tab: "code" };
+function pracBalance(code){
+  var pairs = { "(": 0, "{": 0, "[": 0 }, inStr = false, inCom = false, esc2 = false;
+  for (var i = 0; i < code.length; i++){
+    var c = code[i], n = code[i + 1];
+    if (inCom){ if (c === "\n") inCom = false; continue; }
+    if (inStr){ if (esc2) esc2 = false; else if (c === "\\") esc2 = true; else if (c === "\"") inStr = false; continue; }
+    if (c === "/" && n === "/"){ inCom = true; continue; }
+    if (c === "\""){ inStr = true; continue; }
+    if (c === "(") pairs["("]++; else if (c === ")") pairs["("]--;
+    else if (c === "{") pairs["{"]++; else if (c === "}") pairs["{"]--;
+    else if (c === "[") pairs["["]++; else if (c === "]") pairs["["]--;
+  }
+  return pairs;
+}
+function vPractice(){
+  setNav("practice");
+  if (!store.macroDraft) store.macroDraft =
+    "// 右の関数リファレンスを見ながらマクロを書けます\n" +
+    "// コード中の関数名をダブルクリックすると、右に説明が出ます\n\n" +
+    "title = getTitle();\nprint(title);\nrun(\"Measure\");\n";
+  var html = '<h1 class="page">マクロ練習</h1>' +
+    '<div class="prac-tabs" role="tablist">' +
+      '<button type="button" data-ptab="code" class="' + (prac.tab === "code" ? "on" : "") + '">コード</button>' +
+      '<button type="button" data-ptab="ref" class="' + (prac.tab === "ref" ? "on" : "") + '">関数リファレンス</button></div>' +
+    '<div class="prac" data-tab="' + prac.tab + '">' +
+    '<section class="prac-ed">' +
+      '<div class="prac-tools">' +
+        '<select id="tplSel" aria-label="テンプレート"><option value="">テンプレート…</option>' +
+        MACRO_TEMPLATES.map(function(t, i){ return '<option value="' + i + '">' + esc(t.name) + "</option>"; }).join("") + "</select>" +
+        '<button type="button" class="mini-btn" id="btnCopy">コピー</button>' +
+        '<button type="button" class="mini-btn" id="btnDl">.ijmで保存</button>' +
+        '<button type="button" class="mini-btn" id="btnClear">消去</button>' +
+        '<span class="prac-stat" id="pracStat"></span></div>' +
+      '<div class="ed-wrap"><pre class="ed-gutter" id="edGutter" aria-hidden="true">1</pre>' +
+      '<textarea id="macroEd" spellcheck="false" aria-label="マクロのコード"></textarea></div>' +
+    "</section>" +
+    '<aside class="prac-ref">' +
+      '<div class="prac-ref-tools"><input type="search" id="pracKw" placeholder="関数を検索" value="' + esc(prac.kw) + '" aria-label="関数検索">' +
+      '<div class="chips">' + ['<button type="button" class="chip' + (prac.cat === "all" ? " on" : "") + '" data-pcat="all">すべて</button>']
+        .concat(Object.keys(FCATS).map(function(c){ return '<button type="button" class="chip' + (prac.cat === c ? " on" : "") + '" data-pcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("") + "</div></div>" +
+      '<div class="prac-ref-body" id="pracRefBody"></div>' +
+    "</aside></div>" +
+    '<p class="foot-note">マクロの実行はこのアプリでは行えません。書いたコードは .ijm で保存し、ImageJ / Fiji の Plugins &gt; Macros &gt; Run… から開くか、.ijm ファイルを Fiji のウィンドウへドラッグ＆ドロップして実行してください。下書きはこの端末に自動保存されます。</p>';
+  view.innerHTML = html;
+  var ed = document.getElementById("macroEd"), gut = document.getElementById("edGutter"), stat = document.getElementById("pracStat");
+  ed.value = store.macroDraft;
+  function syncGutter(){
+    var n = ed.value.split("\n").length, s = "";
+    for (var i = 1; i <= n; i++) s += i + "\n";
+    gut.textContent = s; gut.scrollTop = ed.scrollTop;
+    var b = pracBalance(ed.value), bal = [];
+    if (b["("]) bal.push("( が " + b["("]);
+    if (b["{"]) bal.push("{ が " + b["{"]);
+    if (b["["]) bal.push("[ が " + b["["]);
+    stat.textContent = n + " 行" + (bal.length ? " ／ 括弧の対応（目安）：" + bal.join("、") : "");
+  }
+  syncGutter();
+  ed.addEventListener("input", function(){ store.macroDraft = ed.value; save(); syncGutter(); });
+  ed.addEventListener("scroll", function(){ gut.scrollTop = ed.scrollTop; });
+  ed.addEventListener("keydown", function(e){
+    if (e.key === "Tab"){
+      e.preventDefault();
+      var s = ed.selectionStart;
+      ed.setRangeText("  ", s, ed.selectionEnd, "end");
+      ed.dispatchEvent(new Event("input"));
+    }
+  });
+  ed.addEventListener("dblclick", function(){
+    var v = ed.value, s = ed.selectionStart, a = s, z = s;
+    while (a > 0 && /[A-Za-z0-9_.]/.test(v[a - 1])) a--;
+    while (z < v.length && /[A-Za-z0-9_.]/.test(v[z])) z++;
+    var word = v.slice(a, z);
+    if (word && funcByName(word)){ prac.fn = word; prac.tab = "ref"; vPractice(); }
+  });
+  document.getElementById("tplSel").addEventListener("change", function(){
+    if (this.value === "") return;
+    ed.value = MACRO_TEMPLATES[Number(this.value)].code;
+    ed.dispatchEvent(new Event("input"));
+    this.value = "";
+    ed.focus();
+  });
+  document.getElementById("btnClear").addEventListener("click", function(){ ed.value = ""; ed.dispatchEvent(new Event("input")); ed.focus(); });
+  document.getElementById("btnCopy").addEventListener("click", function(){
+    var b = this;
+    function done(){ b.textContent = "コピーしました"; setTimeout(function(){ b.textContent = "コピー"; }, 1600); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ed.value).then(done, done);
+    else { ed.select(); document.execCommand("copy"); done(); }
+  });
+  document.getElementById("btnDl").addEventListener("click", function(){
+    var blob = new Blob([ed.value], { type: "text/plain" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "macro.ijm"; a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
+  });
+  view.querySelectorAll("[data-ptab]").forEach(function(b){ b.addEventListener("click", function(){ prac.tab = b.getAttribute("data-ptab"); vPractice(); }); });
+  document.getElementById("pracKw").addEventListener("input", function(){ prac.kw = this.value; prac.fn = null; renderPracRef(); });
+  view.querySelectorAll("[data-pcat]").forEach(function(b){ b.addEventListener("click", function(){ prac.cat = b.getAttribute("data-pcat"); prac.fn = null; vPractice(); }); });
+  renderPracRef();
+  function renderPracRef(){
+    var body = document.getElementById("pracRefBody");
+    if (!body) return;
+    if (prac.fn){
+      var f = funcByName(prac.fn);
+      if (f){
+        body.innerHTML = '<button type="button" class="mini-btn" id="pracBack">← 一覧</button>' +
+          '<p class="fn-sig">' + esc(f.sig) + "</p><p>" + linkTerms(f.desc, 4) + "</p>" +
+          (f.ret ? '<div class="box box-points"><h3>戻り値</h3><p>' + esc(f.ret) + "</p></div>" : "") +
+          (f.ex ? '<h3>使用例</h3><pre class="code">' + esc(f.ex) + "</pre>" : "") +
+          (f.note ? '<div class="box box-caution"><h3>注意</h3><p>' + esc(f.note) + "</p></div>" : "") +
+          '<div class="prac-ins"><button type="button" class="btn" id="insSig">書式を挿入</button>' +
+          (f.ex ? '<button type="button" class="btn sub" id="insEx">使用例を挿入</button>' : "") + "</div>";
+        document.getElementById("pracBack").addEventListener("click", function(){ prac.fn = null; renderPracRef(); });
+        document.getElementById("insSig").addEventListener("click", function(){ insertCode(/;$/.test(f.sig) ? f.sig : f.sig + ";"); });
+        var exBtn = document.getElementById("insEx");
+        if (exBtn) exBtn.addEventListener("click", function(){ insertCode(f.ex); });
+        return;
+      }
+      prac.fn = null;
+    }
+    var kw = norm(prac.kw);
+    var list = FUNCTIONS.filter(function(f){
+      if (prac.cat !== "all" && f.cat !== prac.cat) return false;
+      if (!kw) return true;
+      return norm(f.name + " " + f.sig + " " + f.desc).indexOf(kw) >= 0;
+    });
+    body.innerHTML = list.length ? list.map(function(f){
+      return '<button type="button" class="fn-row" data-fn="' + esc(f.name) + '"><b class="fn-name">' + esc(f.sig) + "</b><span>" + esc(f.desc.split("。")[0]) + "。</span></button>";
+    }).join("") : '<div class="empty">該当する関数がありません。</div>';
+    body.querySelectorAll("[data-fn]").forEach(function(b){ b.addEventListener("click", function(){ prac.fn = b.getAttribute("data-fn"); renderPracRef(); }); });
+  }
+  function insertCode(text){
+    var s = ed.selectionStart;
+    var before = ed.value.slice(0, s);
+    var insert = (before && !/\n$/.test(before) ? "\n" : "") + text + "\n";
+    ed.setRangeText(insert, s, ed.selectionEnd, "end");
+    ed.dispatchEvent(new Event("input"));
+    if (window.innerWidth < 860){ prac.tab = "code"; vPractice(); document.getElementById("macroEd").focus(); }
+    else ed.focus();
+  }
 }
 
 /* ---------- terms ---------- */
@@ -663,6 +856,7 @@ function route(){
   else if (head === "quiz") { quiz ? vQuizRun() : vQuizSetup(); }
   else if (head === "docs") vDocs();
   else if (head === "doc" && parts[1]) vDoc(parts[1], parts[2] || null);
+  else if (head === "practice") vPractice();
   else if (head === "functions") vFunctions();
   else if (head === "function" && parts[1]) vFunction(decodeURIComponent(parts[1]));
   else if (head === "terms") vTerms();
