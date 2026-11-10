@@ -444,7 +444,7 @@ function vQuizRun(){
       else if (pos === picked) cls += " wrong";
       mark = pos === item.correctPos ? "◯ " : (pos === picked ? "× " : "");
     } else if (false) {}
-    html += '<button type="button" class="choice' + (picked != null && pos === picked && pos !== item.correctPos ? "" : "") + cls.slice(6) + '" data-pos="' + pos + '"' + (picked != null ? " disabled" : "") + '><span class="mk">' + "ABCD"[pos] + '</span><span>' + mark + linkTerms(q.c[ci], 3) + "</span></button>";
+    html += '<button type="button" class="choice' + (picked != null && pos === picked && pos !== item.correctPos ? "" : "") + cls.slice(6) + '" data-pos="' + pos + '"' + (picked != null ? " disabled" : "") + '><span class="mk">' + "ABCD"[pos] + '</span><span>' + mark + esc(q.c[ci]) + "</span></button>";
   });
   html += "</div>";
   if (picked != null){
