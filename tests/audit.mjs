@@ -166,6 +166,31 @@ for (const width of [375, 1280]) {
   await page.goto(url + "#/practice");
   await page.waitForSelector("#macroEd");
   ok((await page.inputValue("#macroEd")).includes("getPixel(x, y);"), `[追加] 下書きが保持される`);
+  // 括弧チェック: ブロックコメント内の括弧を数えない（ステータス表示で確認）
+  await page.fill("#macroEd", "/* ( */ x()");
+  await page.waitForTimeout(80);
+  const statOk = await page.locator("#pracStat").innerText();
+  ok(!statOk.includes("括弧の対応"), `[追加] 括弧チェックがブロックコメントを無視 (${statOk})`);
+  await page.fill("#macroEd", "for (i = 0; i < 3; i++) {");
+  await page.waitForTimeout(80);
+  const statNg = await page.locator("#pracStat").innerText();
+  ok(statNg.includes("{ が 1"), `[追加] 未閉じ括弧は警告される (${statNg})`);
+  // 省略可能部つき書式の挿入: [ ] を落として挿入される
+  await page.click('[data-ptab="ref"]');
+  await page.fill("#pracKw", "getHistogram");
+  await page.waitForTimeout(80);
+  await page.locator("[data-fn='getHistogram']").first().click();
+  await page.waitForSelector("#insSig");
+  await page.click("#insSig");
+  const edVal = await page.inputValue("#macroEd");
+  ok(edVal.includes("getHistogram(values, counts, nBins);") && !edVal.includes("[, histMin"), `[追加] 省略可能部を落として挿入`);
+  // テンプレート上書き確認: 編集済みコードでは確認ダイアログが出て、拒否すると保持される
+  await page.fill("#macroEd", "x = 1; // my code");
+  let dialogSeen = false;
+  page.once("dialog", async d => { dialogSeen = true; await d.dismiss(); });
+  await page.selectOption("#tplSel", "0");
+  await page.waitForTimeout(150);
+  ok(dialogSeen && (await page.inputValue("#macroEd")).includes("my code"), `[追加] テンプレート上書き前に確認し拒否で保持`);
   // クイズ全問走破（全問モードで最後まで回答→結果画面）
   await page.goto(url + "#/quiz");
   await page.waitForSelector("#qForm");

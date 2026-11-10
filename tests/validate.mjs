@@ -16,6 +16,20 @@ const FIGS = new Set(["bitdepth","histogram","threshold","gamma","kernel-blur","
 const L = D.lessons, Q = D.questions, T = D.terms, DOCS = D.docs;
 ok(L.length >= 20 && L.length <= 32, `レッスン数 ${L.length}`);
 ok(Q.length >= 50 && Q.length <= 70, `問題数 ${Q.length}`);
+// マクロ練習のテンプレート・初期コードで使う関数は、関数リファレンスに載っていること（R04整合）
+{
+  const appSrc = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const seg = appSrc.slice(appSrc.indexOf("var MACRO_TEMPLATES"), appSrc.indexOf("var prac ="));
+  const starter = appSrc.slice(appSrc.indexOf("store.macroDraft ="), appSrc.indexOf("var html", appSrc.indexOf("store.macroDraft =")));
+  const cleaned = (seg + starter).replace(/\\n/g, " ");
+  const refNames = new Set((D.functions || []).map(f => f.name));
+  const kw = new Set(["if", "for", "while", "function", "return", "switch", "catch"]);
+  const missing = new Set();
+  for (const m of cleaned.matchAll(/\b([A-Za-z][A-Za-z0-9_.]*)\s*\(/g)) {
+    if (!refNames.has(m[1]) && !kw.has(m[1])) missing.add(m[1]);
+  }
+  ok(missing.size === 0, `テンプレート使用関数がリファレンスに無い: ${[...missing].join(",")}`);
+}
 ok(T.length >= 75, `用語数 ${T.length}`);
 ok(!T.some(t => /\(\)/.test(t.t)), "用語集に関数系の項目が残っている");
 const FN = D.functions || [];
