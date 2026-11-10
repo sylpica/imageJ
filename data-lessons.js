@@ -252,7 +252,7 @@ window.IJDATA2.lessons = [
   ],
   points:["Process > Batch > Macroでフォルダ一括処理","入力→マクロ適用→出力へ保存→閉じる、を自動反復","Output未指定だと自動保存されない","出力は入力と別フォルダにし、元画像を残す"],
   mistakes:["Outputを指定し忘れて、処理したのに保存されていない","入力と出力に同じフォルダを指定して元画像を上書きしてしまう","本番フォルダでいきなり実行して、想定外の処理結果を全画像へ広げてしまう"],
-  related:["L14","L15","L28"],terms:["バッチマクロ（Process > Batch）","バッチ処理","setBatchMode()"],src:"batch"},
+  related:["L14","L15","L28"],terms:["バッチマクロ（Process > Batch）","バッチ処理"],src:"batch"},
  {id:"L14",cat:"macro",title:"マクロ入門：Recorderと run()",lead:"繰り返し操作はマクロに記録するのが再現性の第一歩。中心になるのが run() 関数です。",
   sections:[
    {h:"概念",b:["ImageJマクロはJavaに似たマクロ言語で書かれたテキストです。記録したマクロは、手順そのものを再実行可能な形で残す記録にもなります（レッスンL28）。"],fig:null},
@@ -261,7 +261,7 @@ window.IJDATA2.lessons = [
   ],
   points:["RecorderでGUI操作をマクロ化できる","run()でメニューコマンドを実行する","setBatchMode(true)で非表示・高速化"],
   mistakes:["記録したマクロをそのまま本番データへ流して、対象画像の違いによる誤動作に気付かない","パラメータをマクロ内に書き残さず、手順の再現性が失われてしまう"],
-  related:["L23","L15","L01"],terms:["コマンドレコーダ","run()関数","getTitle()","setThreshold()","setBatchMode()",".ijm / マクロファイル"],src:"macro"},
+  related:["L23","L15","L01"],terms:["コマンドレコーダ",".ijm / マクロファイル"],src:"macro"},
  {id:"L15",cat:"macro",title:"プラグインと拡張、Fijiの更新",lead:"機能拡張の入口：プラグインの仕組みと、Fijiのアップデータによる管理を押さえます。",
   sections:[
    {h:"概念",b:["プラグインはJavaで書かれて .class にコンパイルされた拡張モジュール、マクロはマクロ言語で書かれた .txt ファイルです。なお、ImageJの標準コマンド自体も ij.jar の中のプラグインとして実装されています。"],fig:null},
