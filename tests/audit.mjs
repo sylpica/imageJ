@@ -109,6 +109,43 @@ for (const width of [375, 1280]) {
   ok(errors.length === 0, `[${width}px] JSエラーなし ${errors.join(";")}`);
   await page.close();
 }
+// ---- 追加監査: 入れ子ボタン禁止＋クイズ全問走破 ----
+{
+  const page = await browser.newPage({ viewport: { width: 375, height: 844 } });
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.goto(url);
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  for (const h of ["#/home", "#/lessons", "#/lesson/L09", "#/lesson/L16", "#/doc/D6", "#/doc/D5", "#/terms", "#/term/LUT"]) {
+    await page.goto(url + h);
+    await page.waitForTimeout(150);
+    const nested = await page.evaluate(() => document.querySelectorAll("button button, a button, button a").length);
+    ok(nested === 0, `[追加] ${h} 入れ子インタラクティブ要素なし (${nested})`);
+  }
+  // クイズ全問走破（全問モードで最後まで回答→結果画面）
+  await page.goto(url + "#/quiz");
+  await page.waitForSelector("#qForm");
+  await page.click("#qForm button[type=submit]");
+  let steps = 0;
+  while (steps < 70) {
+    const hasChoice = await page.locator(".choice:not([disabled])").count();
+    if (hasChoice === 4) {
+      const nested = await page.evaluate(() => document.querySelectorAll(".choice button").length);
+      ok(nested === 0, `[追加] 選択肢内に入れ子ボタンなし (step ${steps})`);
+      await page.locator(".choice").first().click();
+      await page.waitForSelector(".verdict");
+    }
+    const next = page.locator("#qNext");
+    if (await next.count()) { await next.click(); steps++; continue; }
+    break;
+  }
+  ok((await page.locator(".result-big").count()) === 1, `[追加] 全問回答して結果画面に到達 (${steps} steps)`);
+  const resTxt = await page.locator(".result-big").innerText();
+  ok(/\/ 63 問/.test(resTxt), `[追加] 結果画面の総数が全問題数と一致 (${resTxt})`);
+  ok(errors.length === 0, `[追加] 全問走破でJSエラーなし ${errors.join(";")}`);
+  await page.close();
+}
 await browser.close();
 if (fails.length) { console.error("AUDIT FAIL:\n" + fails.join("\n")); process.exit(1); }
 console.log("AUDIT ALL PASSED");
