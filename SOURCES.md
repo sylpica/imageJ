@@ -72,3 +72,10 @@
     https://imagej.github.io/imagej-wiki-static/Batch_mode.html
     - Process > Batch > Macro。入力・出力ディレクトリと出力形式を指定し、マクロを全画像へ適用。公式Batch Processing文書（downloads.imagej.net）でも「Output未指定では保存されない」を確認。
     - Scale Bar は既存の出典3（imagejdocu Tools: Widthは校正単位、Heightはピクセル、Font Size/Color/Location/Hide Text/Bold Text）で裏取り。
+
+## v2 で追加した一次情報
+- FFT: https://imagejdocu.list.lu/gui/process/fft
+- Analyze Menu（公式）: https://imagej.net/ij/docs/menus/analyze.html
+- Menus（公式）: https://imagej.net/ij/docs/menus/
+- Macro Functions（公式）: https://imagej.net/ij/developer/macro/functions.html
+- Licensing（権利確認）: https://imagej.net/imagej-wiki-static/Licenses.html

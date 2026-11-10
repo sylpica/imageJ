@@ -1,24 +1,26 @@
-# DESIGN.md — ImageJ学習アプリ設計メモ
+# DESIGN.md — ImageJ 学習・実務リファレンス（v2）設計メモ
 
-- リポジトリ: sylpica/imagej（公開想定URL: https://sylpica.github.io/imagej/ ）
-- 形式: 無料・ログイン不要の静的サイト。バニラHTML/CSS/JS、ビルド不要。ファイルは index.html / style.css / data.js / app.js の4点のみ（+ドキュメントとテスト）。
-- 3本柱: (1)四択問題 (2)教科書レッスン (3)用語集。タブで切替。
+- リポジトリ: sylpica/imageJ（公開URL: https://sylpica.github.io/imageJ/ ）
+- 形式: 無料・ログイン不要の静的サイト。バニラHTML/CSS/JS、ビルド不要。
+- ファイル: index.html / style.css / app.js ＋ データ3点（data-lessons.js / data-questions.js / data-docs.js）。旧 data.js は v2 では読み込まない（履歴として残置）。
 
-## カテゴリ（全コンテンツ共通・10分類）
-basics 基礎とFiji / types 画像の種類と形式 / roi ROI / measure スケールと計測 / threshold 閾値と二値化 / filter フィルタ / hist ヒストグラムと表示 / calc 画像演算 / macro マクロとバッチ / plugin プラグイン
+## 情報設計
+ハッシュルーティング: #/home #/lessons #/lesson/:id #/quiz #/docs #/doc/:chap(/:entry) #/terms #/term/:name #/search?q=
+ヘッダーに横断検索を常設。モバイルは下部ナビ、PCは上部ナビ。
+ホームには「実務の疑問から引く」導線（よくある疑問→該当ドキュメント章）を置く。
 
-## 機能
-- レッスン: カテゴリ絞り込み＋キーワード検索、一覧から選択、前へ/次へ、完了チェック（localStorage保持）
-- 問題: カテゴリ絞り込み、1問ずつ表示、選択→即時正誤フィードバック＋解説＋出典、回答済みは再回答不可（項目間持ち越しなし）、正答数/回答数/正答率の合計表示、最初からやり直し
-- 用語集: カテゴリ絞り込み＋キーワード検索（用語・読み・定義を対象）
-- 進捗は localStorage キー `imagej-study-v1` に保存し、画面遷移・再読込後も保持。リセットボタンあり。
+## データモデル（window.IJDATA2）
+- lessons: {id, cat, title, lead, sections:[{h, b[], fig, figParam}], points[], mistakes[], related[], terms[], src}
+- questions: {id, cat, q, c[4], a, e（正解理由）, w[4]（誤答理由・正解位置はnull）, lesson, src}
+- terms: {t, en, aliases[], cat, d, detail, vs, ex, related[], src}
+- docs: 章 {id, title, intro, entries:[{id, title, menu, body[], points[], caution, src（公式URL）, srcName, version, lessons[], terms[]}]}
 
-## 共通UIルール適用
-1. スクロール最小化: レイアウトはヘッダー52px＋本文グリッド。本文パネル内のみスクロールし、主要操作（前後移動・完了・回答・スコア）はパネル下部に固定表示。
-2. 文字切れゼロ: ellipsis系指定を使わない。全要素 overflow-wrap:anywhere。375pxではサイドバーを上部横並びチップ列に切替え。
-3. 免責・説明文は画面下部（フッター）に配置。上部はタイトルと操作のみ。
-4. ヘッダーは52px・必須要素（ロゴ、タブ、進捗）のみ。
+## 主要な実装上の仕組み
+- 用語リンク: 全用語の名称・英語名・別名から最長一致の正規表現を構築し、本文レンダリング時にボタン化（1ブロック内で同語1回・上限つき）。ポップアップ（モバイルはボトムシート）から用語詳細へ遷移可能
+- 検索: NFKC＋小文字化＋ひらがな→カタカナで正規化。用語の別名・英語名で同義語展開し、正式名称と語幹（括弧注記・「処理」等の接尾辞を除去）でも照合。種類別グループ表示＋抜粋ハイライト
+- 図解: app.js 内の SVG ジェネレータ（bitdepth/histogram/threshold/gamma/kernel-blur/kernel-median/unsharp/scale/roi-mask/particles/zproj/fft の12種）
+- 保存: localStorage キー `ij-ref-v2`（問題履歴・ブックマーク・レッスン完了・ドキュメントブックマーク）。旧キーとは互換なし（破壊的変更として AUDIT2.md に記録）
 
-## 正確性方針
-- 内容は公式ドキュメント等の一次情報で裏取りした範囲のみ（SOURCES.md参照）。裏取りできない数値・仕様は書かない。
-- 全レッスン・全問題解説・全用語に出典URLを必須とし、自動テストで欠落を検出する。
+## 品質ゲート
+- tests/validate.mjs: 参照整合性・必須項目・問題バイアス（最長正解率≦25%、位置分布の均等）を恒常チェック
+- tests/audit.mjs: Playwright で 375px/1280px の実操作監査（遷移・検索・クイズ・ポップアップ・保持・横溢れ・JSエラー）

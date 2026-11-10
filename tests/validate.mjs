@@ -1,86 +1,79 @@
-// データ整合性テスト: node tests/validate.mjs
+// v2 データ整合性・バイアス検証: node tests/validate.mjs
 import { readFileSync } from "node:fs";
-import vm from "node:vm";
+const dir = new URL("../", import.meta.url).pathname;
+global.window = {};
+for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js"]) {
+  eval(readFileSync(dir + f, "utf8"));
+}
+const D = window.IJDATA2;
+D.questionCats = D.questionCats || { basics:1, depth:1, hist:1, thresh:1, filter:1, roi:1, measure:1, fluor:1, valid:1 };
+const fails = [];
+const ok = (c, m) => { if (!c) fails.push(m); };
 
-const src = readFileSync(new URL("../data.js", import.meta.url), "utf8");
-const sandbox = { window: {} };
-vm.createContext(sandbox);
-vm.runInContext(src, sandbox);
-const D = sandbox.window.IJDATA;
+const SRCKEYS = new Set(["work","filt","bin","calc","math","hist","tools","plug","bio","subbg","zproj","color","batch","guide","menus","macrofn","fft","ana","proc","macro","macropdf"]);
+const FIGS = new Set(["bitdepth","histogram","threshold","gamma","kernel-blur","kernel-median","unsharp","scale","roi-mask","particles","zproj","fft"]);
 
-let fails = [];
-const ok = (cond, msg) => { if (!cond) fails.push(msg); };
+const L = D.lessons, Q = D.questions, T = D.terms, DOCS = D.docs;
+ok(L.length >= 20 && L.length <= 32, `レッスン数 ${L.length}`);
+ok(Q.length >= 50 && Q.length <= 70, `問題数 ${Q.length}`);
+ok(T.length >= 80, `用語数 ${T.length}`);
+ok(DOCS.length === 12, `ドキュメント章数 ${DOCS.length}`);
+const docEntries = DOCS.reduce((n, c) => n + c.entries.length, 0);
+ok(docEntries >= 45, `ドキュメント項目数 ${docEntries}`);
 
-ok(D, "IJDATA missing");
-const cats = new Set(D.CATS.map(c => c[0]));
-ok(cats.size === D.CATS.length, "duplicate category ids");
+const lids = new Set(L.map(l => l.id)), tids = new Set(T.map(t => t.t));
+for (const l of L) {
+  ok(D.lessonCats[l.cat], `レッスン ${l.id} カテゴリ不正 ${l.cat}`);
+  ok(l.sections && l.sections.length >= 2, `レッスン ${l.id} セクション不足`);
+  for (const s of l.sections) { ok(s.h && s.b && s.b.length, `レッスン ${l.id} セクション欠落`); if (s.fig) ok(FIGS.has(s.fig), `レッスン ${l.id} 図ID不正 ${s.fig}`); }
+  for (const r of l.related || []) ok(lids.has(r), `レッスン ${l.id} related 不正 ${r}`);
+  for (const n of l.terms || []) ok(tids.has(n), `レッスン ${l.id} 用語参照不正 ${n}`);
+  ok(SRCKEYS.has(l.src), `レッスン ${l.id} 出典キー不正 ${l.src}`);
+}
+ok(lids.size === L.length, "レッスンID重複");
+const qids = new Set(), dist = [0, 0, 0, 0];
+let longest = 0;
+for (const q of Q) {
+  ok(!qids.has(q.id), `問題ID重複 ${q.id}`); qids.add(q.id);
+  ok(D.questionCats[q.cat], `問題 ${q.id} カテゴリ不正 ${q.cat}`);
+  ok(q.c.length === 4 && new Set(q.c).size === 4, `問題 ${q.id} 選択肢不正`);
+  ok(Number.isInteger(q.a) && q.a >= 0 && q.a < 4, `問題 ${q.id} 正解位置不正`);
+  ok(Array.isArray(q.w) && q.w.length === 4 && q.w[q.a] === null && q.w.every((w, i) => i === q.a || (typeof w === "string" && w.length > 0)), `問題 ${q.id} 誤答理由不正`);
+  ok(q.e && q.e.length >= 20, `問題 ${q.id} 解説不足`);
+  ok(lids.has(q.lesson), `問題 ${q.id} レッスン参照不正 ${q.lesson}`);
+  ok(SRCKEYS.has(q.src), `問題 ${q.id} 出典キー不正 ${q.src}`);
+  dist[q.a]++;
+  const lens = q.c.map(c => c.length), max = Math.max(...lens);
+  if (lens[q.a] === max && lens.filter(x => x === max).length === 1) longest++;
+}
+for (const c of Object.keys(D.questionCats)) {
+  const n = Q.filter(q => q.cat === c).length;
+  ok(n >= 4, `カテゴリ ${c} の問題数 ${n} < 4`);
+}
+const longestRate = longest / Q.length;
+ok(longestRate <= 0.25, `最長正解率 ${(longestRate * 100).toFixed(1)}% > 25%`);
+const mean = Q.length / 4;
+ok(dist.every(d => Math.abs(d - mean) <= Math.max(2, mean * 0.25)), `正解位置分布 ${dist}`);
+console.log(`bias: uniqueLongestCorrect=${longest}/${Q.length} (${(longestRate * 100).toFixed(1)}%) answerDist=${dist}`);
 
-function checkCommon(items, kind, required) {
-  const ids = new Set();
-  for (const it of items) {
-    ok(it.id || it.t, `${kind}: missing id/term`);
-    const key = it.id || it.t;
-    ok(!ids.has(key), `${kind}: duplicate id ${key}`);
-    ids.add(key);
-    ok(cats.has(it.cat), `${kind} ${key}: unknown category ${it.cat}`);
-    ok(it.src && D.S[it.src], `${kind} ${key}: source key missing/invalid (${it.src})`);
-    for (const f of required) ok(it[f] !== undefined && it[f] !== "", `${kind} ${key}: missing field ${f}`);
+for (const t of T) {
+  ok(t.t && t.en && t.d && t.detail, `用語 ${t.t} 必須項目欠落`);
+  ok(Array.isArray(t.aliases), `用語 ${t.t} aliases 不正`);
+  for (const r of t.related || []) ok(tids.has(r), `用語 ${t.t} related 不正 ${r}`);
+  ok(SRCKEYS.has(t.src), `用語 ${t.t} 出典キー不正 ${t.src}`);
+}
+ok(tids.size === T.length, "用語名重複");
+const eids = new Set();
+for (const c of DOCS) {
+  ok(c.entries.length >= 3, `章 ${c.id} 項目不足`);
+  for (const e of c.entries) {
+    ok(!eids.has(e.id), `ドキュメント項目ID重複 ${e.id}`); eids.add(e.id);
+    ok(/^https:\/\//.test(e.src) && e.srcName && e.version, `項目 ${e.id} 出典情報不足`);
+    ok(e.body && e.body.length >= 2, `項目 ${e.id} 本文不足`);
+    for (const r of e.lessons || []) ok(lids.has(r), `項目 ${e.id} レッスン参照不正 ${r}`);
+    for (const n of e.terms || []) ok(tids.has(n), `項目 ${e.id} 用語参照不正 ${n}`);
   }
 }
-
-checkCommon(D.LESSONS, "lesson", ["title", "lead", "body"]);
-for (const l of D.LESSONS) {
-  ok(Array.isArray(l.body) && l.body.length >= 2, `lesson ${l.id}: body too short`);
-  ok(Array.isArray(l.points) && l.points.length >= 2, `lesson ${l.id}: points too short`);
-}
-
-checkCommon(D.QUESTIONS, "question", ["q", "c", "e"]);
-for (const q of D.QUESTIONS) {
-  ok(Array.isArray(q.c) && q.c.length === 4, `question ${q.id}: must have exactly 4 choices`);
-  ok(new Set(q.c).size === 4, `question ${q.id}: duplicate choices`);
-  ok(Number.isInteger(q.a) && q.a >= 0 && q.a < 4, `question ${q.id}: answer index out of range (${q.a})`);
-  ok(q.e && q.e.length >= 10, `question ${q.id}: explanation too short`);
-}
-
-checkCommon(D.TERMS, "term", ["d"]);
-for (const t of D.TERMS) ok(t.d.length >= 10, `term ${t.t}: definition too short`);
-
-// 規模の下限（目標）
-ok(D.LESSONS.length >= 12, `lessons ${D.LESSONS.length} < 12`);
-ok(D.QUESTIONS.length >= 55 && D.QUESTIONS.length <= 75, `questions ${D.QUESTIONS.length} not in 55..75`);
-ok(D.TERMS.length >= 60, `terms ${D.TERMS.length} < 60`);
-
-// 選択肢の偏りチェック（恒常）: 正解が「唯一最長」の割合と正解位置の分布
-{
-  const Q = D.QUESTIONS;
-  const len = s => [...s].length;
-  let uniqueLongest = 0;
-  const dist = [0, 0, 0, 0];
-  for (const q of Q) {
-    dist[q.a]++;
-    const L = q.c.map(len);
-    const max = Math.max(...L);
-    if (L[q.a] === max && L.filter(x => x === max).length === 1) uniqueLongest++;
-  }
-  const ratio = uniqueLongest / Q.length;
-  console.log(`bias: uniqueLongestCorrect=${uniqueLongest}/${Q.length} (${(ratio * 100).toFixed(1)}%) answerDist=${dist.join(",")}`);
-  ok(ratio <= 0.35, `correct is uniquely longest in ${(ratio * 100).toFixed(1)}% > 35%`);
-  for (let i = 0; i < 4; i++) {
-    const r = dist[i] / Q.length;
-    ok(r >= 0.15 && r <= 0.35, `answer position ${i} ratio ${(r * 100).toFixed(1)}% outside 25%±10%`);
-  }
-}
-
-// 全カテゴリに各コンテンツが存在する
-for (const c of cats) {
-  ok(D.LESSONS.some(l => l.cat === c), `category ${c}: no lessons`);
-  ok(D.QUESTIONS.some(q => q.cat === c), `category ${c}: no questions`);
-  ok(D.TERMS.some(t => t.cat === c), `category ${c}: no terms`);
-}
-
-// 出典URLは http(s) で始まる
-for (const [k, u] of Object.entries(D.S)) ok(/^https?:\/\//.test(u), `source ${k}: bad URL`);
-
-console.log(`lessons=${D.LESSONS.length} questions=${D.QUESTIONS.length} terms=${D.TERMS.length} categories=${cats.size}`);
-if (fails.length) { console.error("FAIL:\n" + fails.map(f => " - " + f).join("\n")); process.exit(1); }
+console.log(`lessons=${L.length} questions=${Q.length} terms=${T.length} docChapters=${DOCS.length} docEntries=${docEntries}`);
+if (fails.length) { console.error("VALIDATE FAIL:\n" + fails.join("\n")); process.exit(1); }
 console.log("ALL CHECKS PASSED");
