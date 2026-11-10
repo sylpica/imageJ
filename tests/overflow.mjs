@@ -34,7 +34,7 @@ if (!D.lessons) { // フォールバック: require 方式
   Object.assign(D, w.IJDATA2);
 }
 
-const routes = ["#/home", "#/lessons", "#/quiz", "#/docs", "#/functions", "#/terms", "#/search?q=threshold"];
+const routes = ["#/home", "#/lessons", "#/quiz", "#/docs", "#/functions", "#/terms", "#/search?q=threshold", "#/practice"];
 for (const l of D.lessons) routes.push("#/lesson/" + l.id);
 for (const c of D.docs) routes.push("#/doc/" + c.id);
 for (const t of D.terms) routes.push("#/term/" + encodeURIComponent(t.t));

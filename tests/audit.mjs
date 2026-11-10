@@ -36,7 +36,7 @@ for (const width of [375, 1280]) {
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   ok(overflow <= 0, `[${width}px] ホーム横溢れなし (${overflow})`);
-  ok((await page.locator(".tile").count()) === 5, `[${width}px] ホームのタイル5件`);
+  ok((await page.locator(".tile").count()) === 6, `[${width}px] ホームのタイル6件`);
 
   // レッスン一覧→詳細（図つき）→用語ポップアップ→用語詳細
   await page.goto(url + "#/lessons");
@@ -149,6 +149,23 @@ for (const width of [375, 1280]) {
   await page.goto(url + "#/search?q=getPixel");
   await page.waitForSelector("h1.page");
   ok((await page.locator(".view").innerText()).includes("関数"), `[追加] 横断検索に関数グループ`);
+  // マクロ練習: テンプレート読込→関数詳細→挿入→下書き保持
+  await page.goto(url + "#/practice");
+  await page.waitForSelector("#macroEd");
+  await page.selectOption("#tplSel", "1");
+  ok((await page.inputValue("#macroEd")).includes("setAutoThreshold"), `[追加] テンプレート読込`);
+  await page.click('[data-ptab="ref"]');
+  await page.fill("#pracKw", "getPixel");
+  await page.waitForTimeout(80);
+  await page.locator("[data-fn='getPixel']").first().click();
+  await page.waitForSelector("#insSig");
+  await page.click("#insSig");
+  ok((await page.inputValue("#macroEd")).includes("getPixel(x, y);"), `[追加] 関数の書式をエディタへ挿入`);
+  await page.goto(url + "#/home");
+  await page.waitForSelector(".tiles");
+  await page.goto(url + "#/practice");
+  await page.waitForSelector("#macroEd");
+  ok((await page.inputValue("#macroEd")).includes("getPixel(x, y);"), `[追加] 下書きが保持される`);
   // クイズ全問走破（全問モードで最後まで回答→結果画面）
   await page.goto(url + "#/quiz");
   await page.waitForSelector("#qForm");
