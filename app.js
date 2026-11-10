@@ -238,13 +238,11 @@ function vHome(){
   var seen = Object.keys(store.hist).length;
   var wrong = Object.keys(store.hist).filter(function(k){ return store.hist[k].lastWrong; }).length;
   view.innerHTML =
-    '<section class="hero"><h1>使いながら調べ、調べて理解する。</h1>' +
-    "<p>ImageJ/Fiji の原理を学ぶレッスン、理解を確かめる問題、公式ドキュメントの日本語リファレンス、用語集を横断して使える実務リファレンスです。疑問は上の検索から直接どうぞ。</p></section>" +
     '<div class="tiles">' +
-    '<a class="tile" href="#/lessons"><span class="n">' + LESSONS.length + '</span><b>レッスン</b><span>原理から実務フローまで</span></a>' +
-    '<a class="tile" href="#/quiz"><span class="n">' + QUESTIONS.length + '</span><b>問題</b><span>暗記ではなく理解と判断</span></a>' +
-    '<a class="tile" href="#/docs"><span class="n">' + DOCS.reduce(function(n, c){ return n + c.entries.length; }, 0) + '</span><b>ドキュメント</b><span>公式資料の日本語リファレンス</span></a>' +
-    '<a class="tile" href="#/terms"><span class="n">' + TERMS.length + '</span><b>用語集</b><span>本文中の用語はタップで説明</span></a></div>' +
+    '<a class="tile" href="#/lessons"><span class="n">' + LESSONS.length + '</span><b>レッスン</b></a>' +
+    '<a class="tile" href="#/quiz"><span class="n">' + QUESTIONS.length + '</span><b>問題</b></a>' +
+    '<a class="tile" href="#/docs"><span class="n">' + DOCS.reduce(function(n, c){ return n + c.entries.length; }, 0) + '</span><b>ドキュメント</b></a>' +
+    '<a class="tile" href="#/terms"><span class="n">' + TERMS.length + '</span><b>用語集</b></a></div>' +
     '<h2 class="sec">実務の疑問から引く</h2><div class="quick"><ul>' +
     '<li><a href="#/doc/D6">Threshold と Convert to Mask は何が違う？</a></li>' +
     '<li><a href="#/doc/D5">Mean Gray Value は何を表す？／測定の単位がおかしいとき</a></li>' +
@@ -252,7 +250,7 @@ function vHome(){
     '<li><a href="#/doc/D6">Analyze Particles で数が合わないとき</a></li>' +
     '<li><a href="#/doc/D2">ビット深度を下げると何が失われる？</a></li></ul></div>' +
     '<h2 class="sec">あなたの記録</h2><div class="quick" style="padding-top:14px"><p style="margin:0">完了レッスン ' + doneL + " / " + LESSONS.length + "　・　解いた問題 " + seen + " 問" + (wrong ? "　・　復習待ち " + wrong + ' 問（<a href="#/quiz">問題モードで復習</a>）' : "") + "</p></div>" +
-    '<p class="notice">本アプリのドキュメント本文は、公式資料をもとに独自に書き起こした日本語の要約・解説です（公式ドキュメントの翻訳・転載ではありません）。正確な定義や最新仕様は各項目の出典リンクから公式原文で確認してください。対象は主に ImageJ 1.x 系（Fiji 含む）です。学習記録はこの端末のブラウザ内にのみ保存されます。</p>';
+    '<p class="notice">ドキュメント本文は公式資料をもとにした独自の要約・解説です（翻訳・転載ではありません）。学習記録はこの端末内にのみ保存されます。</p>';
 }
 
 /* ---------- lessons ---------- */
@@ -266,7 +264,7 @@ function vLessons(){
     return (lessonFilter.cat === "all" || l.cat === lessonFilter.cat) &&
       (!lessonFilter.kw || norm(l.title + l.lead + l.sections.map(function(s){ return s.h + s.b.join(""); }).join("")).indexOf(norm(lessonFilter.kw)) >= 0);
   });
-  view.innerHTML = '<h1 class="page">レッスン</h1><p class="page-sub">概念 → 原理 → ImageJでの意味 → 注意点、の順で読めます。本文中の点線の用語はタップで説明が出ます。</p>' +
+  view.innerHTML = '<h1 class="page">レッスン</h1>' +
     '<div class="toolbar"><input type="search" id="lKw" placeholder="レッスン内を検索" value="' + esc(lessonFilter.kw) + '" aria-label="レッスン検索"></div>' +
     '<div class="chips">' + chips + "</div>" +
     (list.length ? '<div class="card-list">' + list.map(function(l){
@@ -309,7 +307,7 @@ function vLesson(id){
 /* ---------- docs ---------- */
 function vDocs(){
   setNav("docs");
-  view.innerHTML = '<h1 class="page">ドキュメント</h1><p class="page-sub">ImageJ 公式ドキュメントの日本語リファレンス。本文は公式資料をもとにした独自の要約・解説で、各項目に出典と対象バージョンを明示しています。</p>' +
+  view.innerHTML = '<h1 class="page">ドキュメント</h1>' +
     '<div class="card-list">' + DOCS.map(function(c){
       return '<a class="card" href="#/doc/' + c.id + '"><b>' + esc(c.title) + "</b><p>" + esc(c.intro) + "</p><p>全 " + c.entries.length + " 項目</p></a>";
     }).join("") + "</div>";
@@ -358,7 +356,7 @@ function vTerms(){
     if (!kw) return true;
     return norm(t.t + " " + (t.en || "") + " " + (t.aliases || []).join(" ") + " " + t.d).indexOf(kw) >= 0;
   });
-  view.innerHTML = '<h1 class="page">用語集</h1><p class="page-sub">日本語名・英語名・別名から引けます。本文中の用語タップでも開きます。</p>' +
+  view.innerHTML = '<h1 class="page">用語集</h1>' +
     '<div class="toolbar"><input type="search" id="tKw" placeholder="用語を検索（例：しきい値、LUT）" value="' + esc(termFilter.kw) + '" aria-label="用語検索"></div>' +
     '<div class="chips">' + chips + "</div>" +
     (list.length ? '<div class="card-list">' + list.map(function(t){
@@ -389,7 +387,7 @@ function vQuizSetup(){
   setNav("quiz");
   var cats = Object.keys(QCATS);
   var wrong = wrongIds().length;
-  view.innerHTML = '<h1 class="page">問題</h1><p class="page-sub">暗記ではなく、原理の理解と手法の判断を問います。出題順・選択肢順は毎回シャッフルされます。</p>' +
+  view.innerHTML = '<h1 class="page">問題</h1>' +
     '<div class="quiz-setup"><form id="qForm">' +
     '<fieldset><legend>モード</legend><div class="radio-row">' +
     '<label><input type="radio" name="mode" value="all" checked> 全問</label>' +
@@ -580,7 +578,7 @@ function doSearch(q){
 function vSearch(q){
   setNav("");
   var res = doSearch(q), R = res.R, total = R.terms.length + R.lessons.length + R.docs.length + R.questions.length;
-  var html = '<h1 class="page">検索結果</h1><p class="page-sub">「' + esc(q) + '」― ' + total + " 件（用語の別名・英語名でも引けます）</p>";
+  var html = '<h1 class="page">検索結果</h1><p class="page-sub">「' + esc(q) + '」― ' + total + " 件</p>";
   if (!total) html += '<div class="empty">見つかりませんでした。表記を変える（例：しきい値／閾値／threshold）、または短い語で試してください。</div>';
   if (R.terms.length) html += '<div class="sr-group"><h2 class="sec">用語</h2>' + R.terms.map(function(r){
     return '<a class="sr-item" href="#/term/' + encodeURIComponent(r.t.t) + '"><span class="sr-kind">用語</span><b>' + esc(r.t.t) + "</b> <span style='color:var(--faint);font-size:13px'>" + esc(r.t.en || "") + "</span><p>" + snippet(r.t.d, res.terms) + "</p></a>";

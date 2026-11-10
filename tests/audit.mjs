@@ -16,7 +16,7 @@ for (const width of [375, 1280]) {
   await page.goto(url);
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await page.waitForSelector(".hero");
+  await page.waitForSelector(".tiles");
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   ok(overflow <= 0, `[${width}px] ホーム横溢れなし (${overflow})`);
