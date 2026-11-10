@@ -438,11 +438,13 @@ var MACRO_TEMPLATES = [
 ];
 var prac = { cat: "all", kw: "", fn: null, tab: "code" };
 function pracBalance(code){
-  var pairs = { "(": 0, "{": 0, "[": 0 }, inStr = false, inCom = false, esc2 = false;
+  var pairs = { "(": 0, "{": 0, "[": 0 }, inStr = false, inCom = false, inBlock = false, esc2 = false;
   for (var i = 0; i < code.length; i++){
     var c = code[i], n = code[i + 1];
+    if (inBlock){ if (c === "*" && n === "/"){ inBlock = false; i++; } continue; }
     if (inCom){ if (c === "\n") inCom = false; continue; }
     if (inStr){ if (esc2) esc2 = false; else if (c === "\\") esc2 = true; else if (c === "\"") inStr = false; continue; }
+    if (c === "/" && n === "*"){ inBlock = true; i++; continue; }
     if (c === "/" && n === "/"){ inCom = true; continue; }
     if (c === "\""){ inStr = true; continue; }
     if (c === "(") pairs["("]++; else if (c === ")") pairs["("]--;
@@ -513,6 +515,9 @@ function vPractice(){
   });
   document.getElementById("tplSel").addEventListener("change", function(){
     if (this.value === "") return;
+    var cur = ed.value;
+    var isStarter = cur.indexOf("右の関数リファレンスを見ながら") >= 0 || MACRO_TEMPLATES.some(function(t){ return t.code === cur; });
+    if (cur.trim() && !isStarter && !window.confirm("現在のコードをテンプレートで置き換えますか？（下書きも置き換わります）")){ this.value = ""; return; }
     ed.value = MACRO_TEMPLATES[Number(this.value)].code;
     ed.dispatchEvent(new Event("input"));
     this.value = "";
@@ -549,7 +554,11 @@ function vPractice(){
           '<div class="prac-ins"><button type="button" class="btn" id="insSig">書式を挿入</button>' +
           (f.ex ? '<button type="button" class="btn sub" id="insEx">使用例を挿入</button>' : "") + "</div>";
         document.getElementById("pracBack").addEventListener("click", function(){ prac.fn = null; renderPracRef(); });
-        document.getElementById("insSig").addEventListener("click", function(){ insertCode(/;$/.test(f.sig) ? f.sig : f.sig + ";"); });
+        document.getElementById("insSig").addEventListener("click", function(){
+          // 書式中の省略可能部 [ ] は落として、そのまま動く形で挿入する
+          var s = f.sig.replace(/\[[^\]]*\]/g, "").replace(/,\s*\)/, ")").replace(/\s+/g, " ");
+          insertCode(/;$/.test(s) ? s : s + ";");
+        });
         var exBtn = document.getElementById("insEx");
         if (exBtn) exBtn.addEventListener("click", function(){ insertCode(f.ex); });
         return;
