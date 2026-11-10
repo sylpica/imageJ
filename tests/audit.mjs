@@ -3,7 +3,23 @@ import { createRequire } from "node:module";
 const require = createRequire("/home/hatch/workspace/dev/g-ai-master/package.json");
 const { chromium } = require("playwright");
 
-const url = "file:///home/hatch/workspace/dev/imagej/index.html";
+import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
+// file:// はスクリプト読込が不安定（ERR_FAILED を実測）なため、ローカルHTTPで配信して監査する
+const root = "/home/hatch/workspace/dev/imagej";
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
+const server = http.createServer((req, res) => {
+  const rel = decodeURIComponent(req.url.split("?")[0].split("#")[0]);
+  const p = path.join(root, rel === "/" ? "index.html" : rel);
+  fs.readFile(p, (err, data) => {
+    if (err) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { "Content-Type": MIME[path.extname(p)] || "application/octet-stream" });
+    res.end(data);
+  });
+});
+await new Promise(r => server.listen(0, "127.0.0.1", r));
+const url = `http://127.0.0.1:${server.address().port}/index.html`;
 let fails = [];
 const ok = (c, m) => { if (!c) fails.push(m); else console.log("PASS", m); };
 
@@ -15,12 +31,12 @@ for (const width of [375, 1280]) {
   page.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
   await page.goto(url);
   await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await page.goto("about:blank"); await page.goto(url);
   await page.waitForSelector(".tiles");
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   ok(overflow <= 0, `[${width}px] ホーム横溢れなし (${overflow})`);
-  ok((await page.locator(".tile").count()) === 4, `[${width}px] ホームのタイル4件`);
+  ok((await page.locator(".tile").count()) === 5, `[${width}px] ホームのタイル5件`);
 
   // レッスン一覧→詳細（図つき）→用語ポップアップ→用語詳細
   await page.goto(url + "#/lessons");
@@ -82,7 +98,7 @@ for (const width of [375, 1280]) {
   await page.waitForSelector(".choice:not([disabled])");
   const qtext2 = await page.locator(".qtext").innerText();
   ok(qtext1 !== qtext2, `[${width}px] 次の問題へ進み状態を持ち越さない`);
-  await page.reload();
+  await page.goto("about:blank"); await page.goto(url + "#/quiz"); // 同一URL goto は再読込されないため blank 経由で完全再読込
   await page.waitForSelector("#qForm");
   const setupTxt = await page.locator(".quiz-setup").innerText();
   ok(setupTxt.includes("回答済み 1 問"), `[${width}px] リロード後も履歴保持 (${setupTxt.split("\n")[0]})`);
@@ -116,13 +132,23 @@ for (const width of [375, 1280]) {
   page.on("pageerror", e => errors.push(String(e)));
   await page.goto(url);
   await page.evaluate(() => localStorage.clear());
-  await page.reload();
-  for (const h of ["#/home", "#/lessons", "#/lesson/L09", "#/lesson/L16", "#/doc/D6", "#/doc/D5", "#/terms", "#/term/LUT"]) {
+  await page.goto("about:blank"); await page.goto(url);
+  for (const h of ["#/home", "#/lessons", "#/lesson/L09", "#/lesson/L16", "#/doc/D6", "#/doc/D5", "#/terms", "#/term/LUT", "#/functions", "#/function/getPixel", "#/function/run"]) {
     await page.goto(url + h);
     await page.waitForTimeout(150);
     const nested = await page.evaluate(() => document.querySelectorAll("button button, a button, button a").length);
     ok(nested === 0, `[追加] ${h} 入れ子インタラクティブ要素なし (${nested})`);
   }
+  // 関数メニュー: 一覧→詳細→検索統合
+  await page.goto(url + "#/functions");
+  await page.waitForSelector(".card");
+  ok((await page.locator(".card").count()) >= 70, `[追加] 関数一覧の表示件数`);
+  await page.goto(url + "#/function/getPixel");
+  await page.waitForSelector(".fn-sig");
+  ok((await page.locator(".fn-sig").innerText()).includes("getPixel"), `[追加] 関数詳細の書式表示`);
+  await page.goto(url + "#/search?q=getPixel");
+  await page.waitForSelector("h1.page");
+  ok((await page.locator(".view").innerText()).includes("関数"), `[追加] 横断検索に関数グループ`);
   // クイズ全問走破（全問モードで最後まで回答→結果画面）
   await page.goto(url + "#/quiz");
   await page.waitForSelector("#qForm");
@@ -147,5 +173,6 @@ for (const width of [375, 1280]) {
   await page.close();
 }
 await browser.close();
+server.close();
 if (fails.length) { console.error("AUDIT FAIL:\n" + fails.join("\n")); process.exit(1); }
 console.log("AUDIT ALL PASSED");

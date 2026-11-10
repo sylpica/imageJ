@@ -3,6 +3,7 @@
 var D2 = window.IJDATA2 || {};
 var LESSONS = D2.lessons || [], QUESTIONS = D2.questions || [],
     TERMS = D2.terms || [], DOCS = D2.docs || [],
+    FUNCTIONS = D2.functions || [], FCATS = D2.functionCats || {},
     LCATS = D2.lessonCats || {}, QCATS = D2.questionCats || {}, TCATS = D2.termCats || {};
 if (!Object.keys(TCATS).length) TCATS = { basics:"基礎", types:"画像の種類", roi:"ROI", measure:"測定と校正", threshold:"閾値と二値化", filter:"フィルタ", hist:"ヒストグラムと表示", calc:"画像演算", macro:"マクロ", plugin:"プラグイン", flow:"実務" };
 if (!Object.keys(QCATS).length) QCATS = { basics:"画像の基礎", depth:"ビット深度と型", hist:"ヒストグラムと画素値", thresh:"閾値と二値化", filter:"フィルタと周波数", roi:"ROI・マスク・校正", measure:"測定と粒子解析", fluor:"背景補正と蛍光", valid:"妥当性と再現性" };
@@ -242,6 +243,7 @@ function vHome(){
     '<a class="tile" href="#/lessons"><span class="n">' + LESSONS.length + '</span><b>レッスン</b></a>' +
     '<a class="tile" href="#/quiz"><span class="n">' + QUESTIONS.length + '</span><b>問題</b></a>' +
     '<a class="tile" href="#/docs"><span class="n">' + DOCS.reduce(function(n, c){ return n + c.entries.length; }, 0) + '</span><b>ドキュメント</b></a>' +
+    '<a class="tile" href="#/functions"><span class="n">' + FUNCTIONS.length + '</span><b>関数</b></a>' +
     '<a class="tile" href="#/terms"><span class="n">' + TERMS.length + '</span><b>用語集</b></a></div>' +
     '<h2 class="sec">実務の疑問から引く</h2><div class="quick"><ul>' +
     '<li><a href="#/doc/D6">Threshold と Convert to Mask は何が違う？</a></li>' +
@@ -341,6 +343,46 @@ function vDoc(id, anchor){
     });
   });
   if (anchor){ var el = document.getElementById(anchor); if (el) setTimeout(function(){ el.scrollIntoView(); }, 30); }
+}
+
+/* ---------- functions ---------- */
+function funcByName(name){ for (var i = 0; i < FUNCTIONS.length; i++) if (FUNCTIONS[i].name === name) return FUNCTIONS[i]; return null; }
+var funcFilter = { cat: "all", kw: "" };
+function vFunctions(){
+  setNav("functions");
+  var cats = Object.keys(FCATS);
+  var chips = ['<button type="button" class="chip' + (funcFilter.cat === "all" ? " on" : "") + '" data-fcat="all">すべて</button>']
+    .concat(cats.map(function(c){ return '<button type="button" class="chip' + (funcFilter.cat === c ? " on" : "") + '" data-fcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("");
+  var kw = norm(funcFilter.kw);
+  var list = FUNCTIONS.filter(function(f){
+    if (funcFilter.cat !== "all" && f.cat !== funcFilter.cat) return false;
+    if (!kw) return true;
+    return norm(f.name + " " + f.sig + " " + f.desc).indexOf(kw) >= 0;
+  });
+  view.innerHTML = '<h1 class="page">関数リファレンス</h1>' +
+    '<div class="toolbar"><input type="search" id="fKw" placeholder="関数を検索（例：getPixel、threshold）" value="' + esc(funcFilter.kw) + '" aria-label="関数検索"></div>' +
+    '<div class="chips">' + chips + "</div>" +
+    (list.length ? '<div class="card-list">' + list.map(function(f){
+      return '<a class="card" href="#/function/' + encodeURIComponent(f.name) + '"><span class="tag">' + esc(FCATS[f.cat] || "") + '</span> <b class="fn-name">' + esc(f.sig) + "</b><p>" + esc(f.desc.split("。")[0]) + "。</p></a>";
+    }).join("") + "</div>" : '<div class="empty">該当する関数がありません。</div>');
+  document.getElementById("fKw").addEventListener("input", function(){ funcFilter.kw = this.value; vFunctions(); var el = document.getElementById("fKw"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); });
+  view.querySelectorAll("[data-fcat]").forEach(function(b){ b.addEventListener("click", function(){ funcFilter.cat = b.getAttribute("data-fcat"); vFunctions(); }); });
+}
+function vFunction(name){
+  setNav("functions");
+  var f = funcByName(name);
+  if (!f){ view.innerHTML = '<div class="empty">関数が見つかりません。<a href="#/functions">関数一覧へ</a></div>'; return; }
+  var html = '<p class="crumb"><a href="#/functions">関数リファレンス</a> ＞ ' + esc(FCATS[f.cat] || "") + '</p><article class="article">' +
+    '<p class="meta-line">' + esc(FCATS[f.cat] || "") + '</p><h1 class="fn-name">' + esc(f.name) + "</h1>" +
+    '<p class="fn-sig">' + esc(f.sig) + "</p>" + paras([f.desc], 6);
+  if (f.ret) html += '<div class="box box-points"><h3>戻り値</h3><p>' + linkTerms(f.ret, 4) + "</p></div>";
+  if (f.ex) html += '<h2>使用例</h2><pre class="code">' + esc(f.ex) + "</pre>";
+  if (f.note) html += '<div class="box box-caution"><h3>注意</h3><p>' + linkTerms(f.note, 4) + "</p></div>";
+  if (f.ver) html += '<p class="meta-line">バージョン要件：' + esc(f.ver) + "</p>";
+  html += '<p class="src-line">出典：<a href="https://imagej.net/ij/developer/macro/functions.html" target="_blank" rel="noopener">ImageJ公式「Built-in Macro Functions」</a>（説明は独自要約）</p></article>';
+  var sameCat = FUNCTIONS.filter(function(x){ return x.cat === f.cat && x.name !== f.name; }).slice(0, 8);
+  if (sameCat.length) html += '<h2 class="sec">同じ分類の関数</h2><div class="rel-chips">' + sameCat.map(function(x){ return '<a href="#/function/' + encodeURIComponent(x.name) + '">' + esc(x.name) + "</a>"; }).join("") + "</div>";
+  view.innerHTML = html;
 }
 
 /* ---------- terms ---------- */
@@ -543,7 +585,7 @@ function snippet(text, terms){
 }
 function doSearch(q){
   var terms = expandQuery(q), rawTerms = norm(q).split(" ").filter(Boolean);
-  var R = { terms: [], lessons: [], docs: [], questions: [] };
+  var R = { terms: [], lessons: [], docs: [], questions: [], functions: [] };
   function scoreText(titleHit, bodyText){
     var s = 0, nt = norm(bodyText);
     terms.forEach(function(t){ if (nt.indexOf(t) >= 0) s += 3; });
@@ -572,12 +614,17 @@ function doSearch(q){
     var s = scoreText(0, hay);
     if (s > 0) R.questions.push({ q: qq, s: s, body: qq.q });
   });
+  FUNCTIONS.forEach(function(f){
+    var hay = f.name + " " + f.sig + " " + f.desc;
+    var s = scoreText(rawTerms.some(function(x){ return norm(f.name) === x; }) ? 12 : 0, hay);
+    if (s > 0) R.functions.push({ f: f, s: s, body: f.desc });
+  });
   Object.keys(R).forEach(function(k){ R[k].sort(function(a, b){ return b.s - a.s; }); R[k] = R[k].slice(0, 8); });
   return { R: R, terms: terms };
 }
 function vSearch(q){
   setNav("");
-  var res = doSearch(q), R = res.R, total = R.terms.length + R.lessons.length + R.docs.length + R.questions.length;
+  var res = doSearch(q), R = res.R, total = R.terms.length + R.lessons.length + R.docs.length + R.questions.length + R.functions.length;
   var html = '<h1 class="page">検索結果</h1><p class="page-sub">「' + esc(q) + '」― ' + total + " 件</p>";
   if (!total) html += '<div class="empty">見つかりませんでした。表記を変える（例：しきい値／閾値／threshold）、または短い語で試してください。</div>';
   if (R.terms.length) html += '<div class="sr-group"><h2 class="sec">用語</h2>' + R.terms.map(function(r){
@@ -591,6 +638,9 @@ function vSearch(q){
   }).join("") + "</div>";
   if (R.questions.length) html += '<div class="sr-group"><h2 class="sec">問題</h2>' + R.questions.map(function(r){
     return '<a class="sr-item" href="#/quiz"><span class="sr-kind">問題</span><b>' + esc(r.q.q) + "</b><p>" + snippet(r.q.e, res.terms) + "</p></a>";
+  }).join("") + "</div>";
+  if (R.functions.length) html += '<div class="sr-group"><h2 class="sec">関数</h2>' + R.functions.map(function(r){
+    return '<a class="sr-item" href="#/function/' + encodeURIComponent(r.f.name) + '"><span class="sr-kind">関数</span><b>' + esc(r.f.sig) + "</b><p>" + snippet(r.body, res.terms) + "</p></a>";
   }).join("") + "</div>";
   view.innerHTML = html;
 }
@@ -613,6 +663,8 @@ function route(){
   else if (head === "quiz") { quiz ? vQuizRun() : vQuizSetup(); }
   else if (head === "docs") vDocs();
   else if (head === "doc" && parts[1]) vDoc(parts[1], parts[2] || null);
+  else if (head === "functions") vFunctions();
+  else if (head === "function" && parts[1]) vFunction(decodeURIComponent(parts[1]));
   else if (head === "terms") vTerms();
   else if (head === "term" && parts[1]) vTerm(decodeURIComponent(parts[1]));
   else if (head.indexOf("search") === 0){

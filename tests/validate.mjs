@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 const dir = new URL("../", import.meta.url).pathname;
 global.window = {};
-for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js"]) {
+for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js", "data-functions.js"]) {
   eval(readFileSync(dir + f, "utf8"));
 }
 const D = window.IJDATA2;
@@ -16,7 +16,22 @@ const FIGS = new Set(["bitdepth","histogram","threshold","gamma","kernel-blur","
 const L = D.lessons, Q = D.questions, T = D.terms, DOCS = D.docs;
 ok(L.length >= 20 && L.length <= 32, `レッスン数 ${L.length}`);
 ok(Q.length >= 50 && Q.length <= 70, `問題数 ${Q.length}`);
-ok(T.length >= 80, `用語数 ${T.length}`);
+ok(T.length >= 75, `用語数 ${T.length}`);
+ok(!T.some(t => /\(\)/.test(t.t)), "用語集に関数系の項目が残っている");
+const FN = D.functions || [];
+ok(FN.length >= 70 && FN.length <= 100, `関数数 ${FN.length}`);
+{
+  const names = new Set();
+  for (const f of FN) {
+    ok(!names.has(f.name), `関数名重複 ${f.name}`); names.add(f.name);
+    ok(f.sig && f.sig.indexOf(f.name) === 0, `関数 ${f.name} 書式不正`);
+    ok(D.functionCats[f.cat], `関数 ${f.name} カテゴリ不正 ${f.cat}`);
+    ok(f.desc && f.desc.length >= 20, `関数 ${f.name} 説明不足`);
+    ok("ret" in f && "ex" in f && "note" in f && "ver" in f, `関数 ${f.name} キー欠落`);
+  }
+  for (const c of Object.keys(D.functionCats)) ok(FN.filter(f => f.cat === c).length >= 3, `関数カテゴリ ${c} が少なすぎる`);
+  console.log(`functions=${FN.length}`);
+}
 ok(DOCS.length === 12, `ドキュメント章数 ${DOCS.length}`);
 const docEntries = DOCS.reduce((n, c) => n + c.entries.length, 0);
 ok(docEntries >= 45, `ドキュメント項目数 ${docEntries}`);
