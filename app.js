@@ -126,13 +126,13 @@ function figSVG(id){
     s += txt(100, 196, "0（暗）", 12, "middle") + txt(542, 196, "画素値（明）", 12, "middle");
     if (id === "threshold"){
       var tx = 100 + bw * 11.5;
-      s += '<line x1="' + tx + '" y1="18" x2="' + tx + '" y2="175" stroke="#b3261e" stroke-width="2.5"/>' + txt(tx, 12, "閾値 T", 13, "middle", "#b3261e");
+      s += '<line x1="' + tx + '" y1="18" x2="' + tx + '" y2="175" stroke="#b3261e" stroke-width="2.5"/>' + txt(tx, 16, "閾値 T", 13, "middle", "#b3261e");
       for (var j = 0; j < 20; j++) s += rect(100 + j * bw, 182, bw - 1.5, 12, j < 11.5 ? "#ffffff" : "#1a2332", "#c9d2de");
       s += txt(560, 192, "二値化結果", 11, "start");
       return { svg: s, cap: "ヒストグラムは画素値の分布。閾値 T を境に画素を2クラスへ分けるのが二値化で、元の階調情報は失われる。" };
     }
     var mx = 100 + bw * 9.2;
-    s += '<line x1="' + mx + '" y1="18" x2="' + mx + '" y2="175" stroke="#0f5e6b" stroke-width="2"/>' + txt(mx, 12, "Mean（平均）", 12, "middle", "#0f5e6b");
+    s += '<line x1="' + mx + '" y1="18" x2="' + mx + '" y2="175" stroke="#0f5e6b" stroke-width="2"/>' + txt(mx, 16, "Mean（平均）", 12, "middle", "#0f5e6b");
     return { svg: s, cap: "ヒストグラムの横軸は画素値、縦軸はその値を持つ画素数。Mean や StdDev はこの分布の要約統計量。" };
   }
   if (id === "gamma"){
@@ -142,7 +142,7 @@ function figSVG(id){
       return '<polyline points="' + pts.join(" ") + '" fill="none" stroke="' + col + '" stroke-width="2.5"/>' + txt(528, ly, lab, 13, "start", col);
     }
     s += rect(120, 20, 400, 155, "none", "#c9d2de") + txt(320, 196, "入力", 12) + txt(105, 100, "出力", 12, "end");
-    s += curve(0.5, "#b3261e", "γ=0.5（中間調が明るく）", 60) + curve(1, "#8494a9", "γ=1（直線）", 104) + curve(2, "#0f5e6b", "γ=2（中間調が暗く）", 150);
+    s += curve(0.5, "#b3261e", "γ=0.5（明るく）", 60) + curve(1, "#8494a9", "γ=1（直線）", 104) + curve(2, "#0f5e6b", "γ=2（暗く）", 150);
     return { svg: s, cap: "ガンマ補正は出力＝入力^γ の冪乗変換。γ<1で中間調が持ち上がり、γ>1で沈む。" };
   }
   if (id === "kernel-blur" || id === "kernel-median"){
@@ -329,7 +329,7 @@ function vDoc(id, anchor){
       "<h3>" + esc(e.title) + "</h3>" + paras(e.body, 8);
     if (e.points && e.points.length) html += '<div class="box box-points"><h3>要点・読み方</h3><ul>' + e.points.map(function(p){ return "<li>" + linkTerms(p, 4) + "</li>"; }).join("") + "</ul></div>";
     if (e.caution) html += '<div class="box box-caution"><h3>注意</h3><p>' + linkTerms(e.caution, 4) + "</p></div>";
-    html += '<p class="src-line">出典：<a href="' + esc(e.src) + '" target="_blank" rel="noopener">' + esc(e.srcName) + "</a>" + (e.version ? "／" + esc(e.version) : "") + "（本文は独自要約・解説）</p>";
+    html += '<p class="src-line">出典：<a href="' + esc(e.src) + '" target="_blank" rel="noopener">' + esc(e.srcName) + "</a>" + (e.version ? "／" + esc(e.version) : "") + "<wbr>（本文は独自要約・解説）</p>";
     html += relLessons(e.lessons);
     html += "</section>";
   });
@@ -379,7 +379,7 @@ function vFunction(name){
   if (f.ex) html += '<h2>使用例</h2><pre class="code">' + esc(f.ex) + "</pre>";
   if (f.note) html += '<div class="box box-caution"><h3>注意</h3><p>' + linkTerms(f.note, 4) + "</p></div>";
   if (f.ver) html += '<p class="meta-line">バージョン要件：' + esc(f.ver) + "</p>";
-  html += '<p class="src-line">出典：<a href="https://imagej.net/ij/developer/macro/functions.html" target="_blank" rel="noopener">ImageJ公式「Built-in Macro Functions」</a>（説明は独自要約）</p></article>';
+  html += '<p class="src-line">出典：<a href="https://imagej.net/ij/developer/macro/functions.html" target="_blank" rel="noopener">ImageJ公式「Built-in Macro Functions」</a><wbr>（説明は独自要約）</p></article>';
   var sameCat = FUNCTIONS.filter(function(x){ return x.cat === f.cat && x.name !== f.name; }).slice(0, 8);
   if (sameCat.length) html += '<h2 class="sec">同じ分類の関数</h2><div class="rel-chips">' + sameCat.map(function(x){ return '<a href="#/function/' + encodeURIComponent(x.name) + '">' + esc(x.name) + "</a>"; }).join("") + "</div>";
   view.innerHTML = html;
@@ -486,7 +486,7 @@ function vQuizRun(){
       else if (pos === picked) cls += " wrong";
       mark = pos === item.correctPos ? "◯ " : (pos === picked ? "× " : "");
     } else if (false) {}
-    html += '<button type="button" class="choice' + (picked != null && pos === picked && pos !== item.correctPos ? "" : "") + cls.slice(6) + '" data-pos="' + pos + '"' + (picked != null ? " disabled" : "") + '><span class="mk">' + "ABCD"[pos] + '</span><span>' + mark + esc(q.c[ci]) + "</span></button>";
+    html += '<button type="button" class="choice' + (picked != null && pos === picked && pos !== item.correctPos ? "" : "") + cls.slice(6) + '" data-pos="' + pos + '"' + (picked != null ? " disabled" : "") + '><span class="mk">' + "ABCD"[pos] + '</span><span>' + mark + esc(q.c[ci]).replace(/（/g, "<wbr>（") + "</span></button>";
   });
   html += "</div>";
   if (picked != null){

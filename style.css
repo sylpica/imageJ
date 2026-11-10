@@ -78,7 +78,7 @@ h2.sec{font-size:18px;margin:26px 0 10px;border-left:4px solid var(--acc);paddin
 .box-mistakes{background:var(--warn-bg)}
 .box-caution{background:var(--warn-bg)}
 .box h3{margin:0 0 4px;font-size:15px}
-.src-line{font-size:13px;color:var(--muted);border-top:1px solid var(--line);margin-top:20px;padding-top:10px}
+.src-line{font-size:13px;color:var(--muted);border-top:1px solid var(--line);margin-top:20px;padding-top:10px;overflow-wrap:anywhere;line-break:anywhere}
 .rel-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .rel-chips a{border:1px solid var(--line);border-radius:999px;padding:4px 12px;text-decoration:none;font-size:13.5px;background:#fbfcfe;color:var(--acc)}
 .pager{display:flex;justify-content:space-between;gap:10px;margin-top:16px;flex-wrap:wrap}
@@ -159,7 +159,9 @@ pre.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;backgr
 /* docs */
 .doc-entry{border-top:1px solid var(--line);padding:16px 0 6px}
 .doc-entry:first-of-type{border-top:none}
-.doc-entry h3{font-size:17.5px;margin:0 0 4px}
+.doc-entry h3{font-size:17.5px;margin:0 0 4px;overflow-wrap:anywhere}
+.de-menu{overflow-wrap:anywhere}
+.choice span:last-child{min-width:0;overflow-wrap:anywhere;line-break:anywhere}
 .doc-menu{font-size:13px;color:var(--acc);font-weight:700}
 .toc{position:sticky;top:calc(var(--header-h) + 8px)}
 .toc a{display:block;padding:5px 8px;color:var(--ink);text-decoration:none;font-size:14.5px;border-radius:6px}
