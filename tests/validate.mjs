@@ -21,12 +21,17 @@ ok(Q.length >= 50 && Q.length <= 70, `問題数 ${Q.length}`);
   const appSrc = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   const seg = appSrc.slice(appSrc.indexOf("var MACRO_TEMPLATES"), appSrc.indexOf("var prac ="));
   const starter = appSrc.slice(appSrc.indexOf("store.macroDraft ="), appSrc.indexOf("var html", appSrc.indexOf("store.macroDraft =")));
-  const cleaned = (seg + starter).replace(/\\n/g, " ");
   const refNames = new Set((D.functions || []).map(f => f.name));
   const kw = new Set(["if", "for", "while", "function", "return", "switch", "catch"]);
+  // 照合対象はテンプレートの code 本体のみ（解説文は対象外）。自作関数（function 定義）は除外する
+  const codeTexts = [];
+  for (const m of seg.matchAll(/code:("(?:[^"\\]|\\.)*")/g)) { try { codeTexts.push(JSON.parse(m[1])); } catch {} }
+  const defined = new Set();
+  for (const c of codeTexts) for (const m of c.matchAll(/function\s+([A-Za-z][A-Za-z0-9_]*)\s*\(/g)) defined.add(m[1]);
+  const starterCode = starter.replace(/\\n/g, " ");
   const missing = new Set();
-  for (const m of cleaned.matchAll(/\b([A-Za-z][A-Za-z0-9_.]*)\s*\(/g)) {
-    if (!refNames.has(m[1]) && !kw.has(m[1])) missing.add(m[1]);
+  for (const m of (codeTexts.join("\n") + starterCode).matchAll(/\b([A-Za-z][A-Za-z0-9_.]*)\s*\(/g)) {
+    if (!refNames.has(m[1]) && !kw.has(m[1]) && !defined.has(m[1])) missing.add(m[1]);
   }
   ok(missing.size === 0, `テンプレート使用関数がリファレンスに無い: ${[...missing].join(",")}`);
 }

@@ -388,54 +388,57 @@ function vFunction(name){
 
 /* ---------- macro practice ---------- */
 var MACRO_TEMPLATES = [
-{ name: "雛形：開いている画像をすべて測定", code:
-"// 開いている画像をすべて測定し、結果をCSVで保存する\n" +
-"dir = getDirectory(\"保存先フォルダを選んでください\");\n" +
-"ids = newArray(nImages);\n" +
-"for (i = 0; i < nImages; i++) {\n" +
-"    selectImage(i + 1);\n" +
-"    ids[i] = getImageID();\n" +
-"}\n" +
-"setBatchMode(true);\n" +
-"for (i = 0; i < ids.length; i++) {\n" +
-"    selectImage(ids[i]);\n" +
-"    run(\"Measure\");\n" +
-"}\n" +
-"saveAs(\"Results\", dir + \"results.csv\");\n" +
-"setBatchMode(false);\n" },
-{ name: "雛形：粒子カウント", code:
-"// 8bit化 → 自動閾値 → 二値化 → 分離 → 粒子解析\n" +
-"run(\"8-bit\");\n" +
-"setAutoThreshold(\"Otsu dark\");\n" +
-"run(\"Convert to Mask\");\n" +
-"run(\"Watershed\");\n" +
-"run(\"Analyze Particles...\", \"size=10-Infinity circularity=0.00-1.00 show=Outlines summarize\");\n" },
-{ name: "雛形：ROI Manager の全ROIを測定", code:
-"// ROI Manager に登録した全ROIを順に測定する\n" +
-"n = roiManager(\"count\");\n" +
-"for (i = 0; i < n; i++) {\n" +
-"    roiManager(\"select\", i);\n" +
-"    run(\"Measure\");\n" +
-"}\n" },
-{ name: "雛形：フォルダ一括（スケールバー＋保存）", code:
-"// フォルダ内のTIFFを一括処理して別フォルダへ保存する\n" +
-"dir = getDirectory(\"画像フォルダを選んでください\");\n" +
-"out = getDirectory(\"保存先フォルダを選んでください\");\n" +
-"list = getFileList(dir);\n" +
-"setBatchMode(true);\n" +
-"for (i = 0; i < list.length; i++) {\n" +
-"    if (!endsWith(list[i], \".tif\")) continue;\n" +
-"    open(dir + list[i]);\n" +
-"    run(\"Scale Bar...\", \"width=50 height=8 font=28 color=White background=None location=[Lower Right] bold\");\n" +
-"    saveAs(\"Tiff\", out + list[i]);\n" +
-"    close();\n" +
-"}\n" +
-"setBatchMode(false);\n" },
-{ name: "雛形：Z投影とチャンネル分割", code:
-"// スタックを最大値投影し、チャンネルを分ける\n" +
-"run(\"Z Project...\", \"projection=[Max Intensity]\");\n" +
-"run(\"Split Channels\");\n" }
-];
+    {name:"【基礎】変数と計算・Logへの出力",
+      code:"// 変数・演算・文字列\na = 3;\nb = 4;\nprint(\"a + b = \" + (a + b));\nprint(\"a / b = \" + (a / b));\nname = \"sample\";\nprint(name + \".tif\");",
+      prep:"準備は不要。画像を開かなくても実行できます。結果は Log ウィンドウに出ます。",
+      guide:["マクロの第一歩です。変数は宣言なしでそのまま使え、文の終わりには ; を付けます。print は Log ウィンドウへの出力で、計算結果の確認に使います。", "数値同士の + は加算ですが、文字列が混ざると連結になります。\"a / b = \" + (a / b) の括弧は、連結より先に割り算を計算させるためのものです。"],
+      tries:["a と b の値を変えて、割り算の結果が小数になることを確認する", "print の行を増やして、自分の名前やファイル名を連結して出す"]},
+    {name:"【基礎】条件分岐と繰り返し",
+      code:"// 条件分岐と繰り返し\nfor (i = 1; i <= 5; i++) {\n  if (i % 2 == 0) {\n    print(i + \" は偶数\");\n  } else {\n    print(i + \" は奇数\");\n  }\n}",
+      prep:"準備は不要。結果は Log ウィンドウに出ます。",
+      guide:["for は「初期化; 条件; 更新」の3点セットで繰り返し回数を制御します。if / else は条件で処理を振り分けます。% は割り算の余りで、偶数・奇数の判定の定番です。", "== は比較（等しいか）で、= の代入と意味がまったく違う点に注意してください。条件の中では必ず == を使います。"],
+      tries:["繰り返しを i <= 10 に広げる", "% 2 を % 3 に変えて、3で割り切れる数だけ印を付ける"]},
+    {name:"【基礎】配列と合計・平均",
+      code:"// 配列の合計と平均\nvalues = newArray(12, 7, 25, 3);\nsum = 0;\nfor (i = 0; i < values.length; i++) {\n  sum += values[i];\n}\nprint(\"合計 = \" + sum);\nprint(\"平均 = \" + (sum / values.length));",
+      prep:"準備は不要。結果は Log ウィンドウに出ます。",
+      guide:["newArray で値の並び（配列）を作ります。要素は values[0] のように番号（0始まり）で取り出し、values.length が要素数です。", "合計を数えながら積み上げる書き方は、測定値の平均やヒストグラムの集計など、実務の集計処理の土台になります。sum += x は sum = sum + x の省略形です。"],
+      tries:["配列の値を自分の測定値に置き換えて平均を出す", "最大値を求める処理を追加する（if で max と比べる）"]},
+    {name:"【基礎】関数の定義",
+      code:"// 関数の定義と呼び出し\nfunction circleArea(r) {\n  return PI * r * r;\n}\nfor (r = 1; r <= 3; r++) {\n  print(\"r=\" + r + \" の面積 = \" + circleArea(r));\n}",
+      prep:"準備は不要。結果は Log ウィンドウに出ます。",
+      guide:["function 名前（引数） { ... } で、処理に名前を付けて再利用できるようにします。return で計算結果を呼び出し側へ返します。PI は円周率の組み込み定数です。", "同じ計算を何度も書く代わりに関数にまとめると、直す場所が1か所で済みます。面積から半径を出すような換算にも同じ型が使えます。"],
+      tries:["半径の範囲を r <= 5 に広げる", "円周を求める関数 circleLength(r) を追加する"]},
+    {name:"【基礎】開いている画像の情報を調べる",
+      code:"// 開いている画像の情報\nif (nImages == 0) {\n  print(\"画像が開かれていません\");\n} else {\n  print(\"タイトル: \" + getTitle());\n  print(\"幅: \" + getWidth() + \" px\");\n  print(\"高さ: \" + getHeight() + \" px\");\n  print(\"スライス数: \" + nSlices);\n  print(\"ビット深度: \" + bitDepth());\n}",
+      prep:"任意の画像を1枚開いておく（開かなくても、メッセージが出るだけです）。",
+      guide:["画像を対象にするマクロの入り口の型です。nImages は開いている画像の数で、0のときは画像前提の処理をせずに終わります。", "getTitle、getWidth、getHeight、nSlices、bitDepth は、アクティブな画像から情報を読む関数です。スライス数はスタックの枚数、ビット深度は画素値の分解能を表します。"],
+      tries:["スタック画像を開いてスライス数の表示を確認する", "画像を開かずに実行して、nImages == 0 の分岐を確認する"]},
+    {name:"雛形：開いている画像をすべて測定",
+      code:"// 開いている画像をすべて測定し、結果をCSVで保存する\ndir = getDirectory(\"保存先フォルダを選んでください\");\nids = newArray(nImages);\nfor (i = 0; i < nImages; i++) {\n    selectImage(i + 1);\n    ids[i] = getImageID();\n}\nsetBatchMode(true);\nfor (i = 0; i < ids.length; i++) {\n    selectImage(ids[i]);\n    run(\"Measure\");\n}\nsaveAs(\"Results\", dir + \"results.csv\");\nsetBatchMode(false);\n",
+      prep:"測定したい画像を1枚以上開いておく。",
+      guide:["開いている画像を順に選んで Measure（測定）を実行し、結果表をCSVに保存するバッチ処理の型です。setBatchMode(true) で画面の再描画を止めて高速化し、saveAs(\"Results\", ...) で結果表を保存します。", "画像の切り替えは selectImage、測定項目の設定は Set Measurements 側の担当です。測定前にスケール（Set Scale）と測定項目を確認しておくのが実務の前提です。"],
+      tries:["Measure の前に run(\"Set Scale...\") を入れて校正を自動化する", "結果表ではなく各画像のヒストグラムも記録するよう getHistogram を追加する"]},
+    {name:"雛形：粒子カウント",
+      code:"// 8bit化 → 自動閾値 → 二値化 → 分離 → 粒子解析\nrun(\"8-bit\");\nsetAutoThreshold(\"Otsu dark\");\nrun(\"Convert to Mask\");\nrun(\"Watershed\");\nrun(\"Analyze Particles...\", \"size=10-Infinity circularity=0.00-1.00 show=Outlines summarize\");\n",
+      prep:"数えたい対象が写った画像を1枚開いておく。",
+      guide:["粒子解析（Analyze Particles）の定番フローです。8-bit 化→自動閾値（Otsu）で二値化→Convert to Mask でマスク化→Watershed でくっついた粒子を分離→Analyze Particles で数えます。", "閾値処理の方法と、対象の大きさ（size）の範囲が結果を大きく左右します。元の画像は別名で残し、二値化した画像で作業するのが安全です。"],
+      tries:["size=10-Infinity の下限を変えて、小さなノイズがどう消えるか見る", "setAutoThreshold の Otsu を Default や Huang に変えて数え比べる"]},
+    {name:"雛形：ROI Manager の全ROIを測定",
+      code:"// ROI Manager に登録した全ROIを順に測定する\nn = roiManager(\"count\");\nfor (i = 0; i < n; i++) {\n    roiManager(\"select\", i);\n    run(\"Measure\");\n}\n",
+      prep:"ROI Manager に複数の ROI を登録しておく（なければ ROI を描いて Add）。",
+      guide:["ROI Manager に登録された全 ROI を1つずつ選択して測定する型です。roiManager(\"count\") で件数、roiManager(\"select\", i) で選択を切り替えます。", "結果表には ROI ごとの行が並びます。ROI は画像に対する関心領域で、測定は選択中の ROI に対して行われる点がポイントです。"],
+      tries:["測定の前に roiManager(\"deselect\") を入れる行と入れない行で結果を比べる", "run(\"Measure\") の後に getResult で値を取り出して print する"]},
+    {name:"雛形：フォルダ一括（スケールバー＋保存）",
+      code:"// フォルダ内のTIFFを一括処理して別フォルダへ保存する\ndir = getDirectory(\"画像フォルダを選んでください\");\nout = getDirectory(\"保存先フォルダを選んでください\");\nlist = getFileList(dir);\nsetBatchMode(true);\nfor (i = 0; i < list.length; i++) {\n    if (!endsWith(list[i], \".tif\")) continue;\n    open(dir + list[i]);\n    run(\"Scale Bar...\", \"width=50 height=8 font=28 color=White background=None location=[Lower Right] bold\");\n    saveAs(\"Tiff\", out + list[i]);\n    close();\n}\nsetBatchMode(false);\n",
+      prep:"処理したい画像フォルダを用意する（TIFF画像を想定）。",
+      guide:["フォルダ内のファイルを getFileList で列挙し、拡張子でふるい分けて開き、スケールバーを焼き込んで別名で保存する、バッチ処理の代表型です。", "endsWith で拡張子を判定し、open と saveAs(\"Tiff\", ...) で読み書きします。処理結果は元フォルダとは別の出力フォルダに保存すると元データを壊しません。"],
+      tries:["対象を .tif だけでなく .jpg にも広げる（endsWith の条件を増やす）", "スケールバーの width を画像のスケールに合わせて変える"]},
+    {name:"雛形：Z投影とチャンネル分割",
+      code:"// スタックを最大値投影し、チャンネルを分ける\nrun(\"Z Project...\", \"projection=[Max Intensity]\");\nrun(\"Split Channels\");\n",
+      prep:"スタック画像（複数スライス）を1つ開いておく。",
+      guide:["スタックを Z投影（最大値）で1枚に圧縮してから、チャンネルを分割する型です。run の引数 projection=[Max Intensity] が投影方法の指定です。", "蛍光画像では、最大値投影は各画素で最も明るいスライスを拾うため、焦点の合った信号を集めやすい一方、ノイズも拾いやすい点に注意します。"],
+      tries:["projection を Sum Slices に変えて、明るさの出方を比べる", "Split Channels の前にチャンネル数を print で確認する"]}
+  ];
 var prac = { cat: "all", kw: "", fn: null, tab: "code" };
 function pracBalance(code){
   var pairs = { "(": 0, "{": 0, "[": 0 }, inStr = false, inCom = false, inBlock = false, esc2 = false;
@@ -474,6 +477,7 @@ function vPractice(){
         '<span class="prac-stat" id="pracStat"></span></div>' +
       '<div class="ed-wrap"><pre class="ed-gutter" id="edGutter" aria-hidden="true">1</pre>' +
       '<textarea id="macroEd" spellcheck="false" aria-label="マクロのコード"></textarea></div>' +
+      '<div id="pracGuide"></div>' +
     "</section>" +
     '<aside class="prac-ref">' +
       '<div class="prac-ref-tools"><input type="search" id="pracKw" placeholder="関数を検索" value="' + esc(prac.kw) + '" aria-label="関数検索">' +
@@ -485,6 +489,18 @@ function vPractice(){
   view.innerHTML = html;
   var ed = document.getElementById("macroEd"), gut = document.getElementById("edGutter"), stat = document.getElementById("pracStat");
   ed.value = store.macroDraft;
+  function showGuide(idx){
+    var box = document.getElementById("pracGuide");
+    if (!box) return;
+    if (idx == null || !MACRO_TEMPLATES[idx]){ box.innerHTML = ""; return; }
+    var t = MACRO_TEMPLATES[idx];
+    box.innerHTML = '<div class="prac-guide"><h2>' + esc(t.name) + " ― 解説</h2>" +
+      '<p class="pg-prep">' + linkTerms(t.prep) + "</p>" +
+      t.guide.map(function(p){ return "<p>" + linkTerms(p) + "</p>"; }).join("") +
+      "<h3>改造ポイント</h3><ul>" + t.tries.map(function(x){ return "<li>" + linkTerms(x) + "</li>"; }).join("") + "</ul></div>";
+  }
+  var initTpl = MACRO_TEMPLATES.findIndex(function(t){ return t.code === ed.value; });
+  if (initTpl >= 0) showGuide(initTpl);
   function syncGutter(){
     var n = ed.value.split("\n").length, s = "";
     for (var i = 1; i <= n; i++) s += i + "\n";
@@ -518,8 +534,10 @@ function vPractice(){
     var cur = ed.value;
     var isStarter = cur.indexOf("右の関数リファレンスを見ながら") >= 0 || MACRO_TEMPLATES.some(function(t){ return t.code === cur; });
     if (cur.trim() && !isStarter && !window.confirm("現在のコードをテンプレートで置き換えますか？（下書きも置き換わります）")){ this.value = ""; return; }
-    ed.value = MACRO_TEMPLATES[Number(this.value)].code;
+    var tplIdx = Number(this.value);
+    ed.value = MACRO_TEMPLATES[tplIdx].code;
     ed.dispatchEvent(new Event("input"));
+    showGuide(tplIdx);
     this.value = "";
     ed.focus();
   });

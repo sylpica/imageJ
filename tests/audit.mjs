@@ -152,8 +152,21 @@ for (const width of [375, 1280]) {
   // マクロ練習: テンプレート読込→関数詳細→挿入→下書き保持
   await page.goto(url + "#/practice");
   await page.waitForSelector("#macroEd");
-  await page.selectOption("#tplSel", "1");
+  await page.selectOption("#tplSel", "6");
   ok((await page.inputValue("#macroEd")).includes("setAutoThreshold"), `[追加] テンプレート読込`);
+  // テンプレートの解説が表示され、用語リンクからポップアップが開く
+  await page.waitForSelector("#pracGuide .prac-guide");
+  ok((await page.locator("#pracGuide").innerText()).includes("改造ポイント"), `[追加] テンプレート解説の表示`);
+  await page.selectOption("#tplSel", "4");
+  await page.waitForSelector("#pracGuide .prac-guide");
+  const termBtns = await page.locator("#pracGuide .prac-guide button.term").count();
+  ok(termBtns > 0, `[追加] 解説内の用語リンク (${termBtns})`);
+  if (termBtns > 0){
+    await page.locator("#pracGuide .prac-guide button.term").first().click();
+    await page.waitForSelector(".sheet-card");
+    ok(true, `[追加] 解説の用語からポップアップが開く`);
+    await page.keyboard.press("Escape");
+  }
   await page.click('[data-ptab="ref"]');
   await page.fill("#pracKw", "getPixel");
   await page.waitForTimeout(80);
