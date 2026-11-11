@@ -37,10 +37,12 @@ ok(Q.length >= 50 && Q.length <= 70, `問題数 ${Q.length}`);
   const grab = name => { const a = appSrc.indexOf("\nfunction " + name + "("); return appSrc.slice(a, appSrc.indexOf("\nfunction ", a + 1)); };
   const pracCheck = new Function(grab("pracCheck") + "; return pracCheck;")();
   const pracSigStatement = new Function(grab("pracSigStatement") + "; return pracSigStatement;")();
-  const tplSeg = appSrc.slice(appSrc.indexOf("var MACRO_TEMPLATES"), appSrc.indexOf("];", appSrc.indexOf("var MACRO_TEMPLATES")) + 2);
+  const tplSeg = appSrc.slice(appSrc.indexOf("var MACRO_TEMPLATES"), appSrc.indexOf("\n  ];", appSrc.indexOf("var MACRO_TEMPLATES")) + 5);
   const TPL = new Function(tplSeg + "; return MACRO_TEMPLATES;")();
   const STARTER = new Function(appSrc.slice(appSrc.indexOf("var PRAC_STARTER"), appSrc.indexOf("\nvar prac =")) + "; return PRAC_STARTER;")();
-  ok(TPL.length === 5, `テンプレート数 ${TPL.length}`);
+  ok(TPL.length === 10, `テンプレート数 ${TPL.length}`);
+  ok(TPL.filter(t => /^【基礎】/.test(t.name)).length === 5, "学習用基礎テンプレートが5種");
+  for (const t of TPL) ok(t.prep && Array.isArray(t.guide) && t.guide.length >= 1 && Array.isArray(t.tries) && t.tries.length >= 1, `テンプレート ${t.name} に解説・改造ポイントがある`);
   const refNames = new Set((D.functions || []).map(f => f.name));
   const KW = new Set(["if", "for", "while", "function", "return", "switch", "catch", "do", "else"]);
   const stripStrCom = code => code.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ").replace(/"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, '""');
@@ -64,9 +66,10 @@ ok(Q.length >= 50 && Q.length <= 70, `問題数 ${Q.length}`);
   }
   for (const [label, code] of [["初期コード", STARTER], ...TPL.map(t => [t.name, t.code])]) {
     ok(pracCheck(code) === null, `${label} が静的チェックで警告される`);
+    const own = userFns(code);
     for (const c of calls(code)) {
-      ok(KW.has(c) || off.has(c), `${label} が公式にない関数 ${c} を呼んでいる`);
-      ok(KW.has(c) || refNames.has(c), `${label} の使用関数 ${c} がリファレンスに無い`);
+      ok(KW.has(c) || own.has(c) || off.has(c), `${label} が公式にない関数 ${c} を呼んでいる`);
+      ok(KW.has(c) || own.has(c) || refNames.has(c), `${label} の使用関数 ${c} がリファレンスに無い`);
     }
   }
   // 静的チェック自体の境界ケース（R05）

@@ -154,8 +154,21 @@ for (const width of [375, 1280]) {
   // マクロ練習: テンプレート読込→関数詳細→挿入→下書き保持
   await page.goto(url + "#/practice");
   await page.waitForSelector("#macroEd");
-  await page.selectOption("#tplSel", "1");
+  await page.selectOption("#tplSel", "6");
   ok((await page.inputValue("#macroEd")).includes("setAutoThreshold"), `[追加] テンプレート読込`);
+  // テンプレートの解説が表示され、用語リンクからポップアップが開く
+  await page.waitForSelector("#pracGuide .prac-guide");
+  ok((await page.locator("#pracGuide").innerText()).includes("改造ポイント"), `[追加] テンプレート解説の表示`);
+  await page.selectOption("#tplSel", "4");
+  await page.waitForSelector("#pracGuide .prac-guide");
+  const termBtns = await page.locator("#pracGuide .prac-guide button.term").count();
+  ok(termBtns > 0, `[追加] 解説内の用語リンク (${termBtns})`);
+  if (termBtns > 0){
+    await page.locator("#pracGuide .prac-guide button.term").first().click();
+    await page.waitForSelector(".sheet-card");
+    ok(true, `[追加] 解説の用語からポップアップが開く`);
+    await page.keyboard.press("Escape");
+  }
   await page.click('[data-ptab="ref"]');
   await page.fill("#pracKw", "getPixel");
   await page.waitForTimeout(80);
@@ -242,8 +255,12 @@ for (const width of [375, 1280]) {
   // 初期コード：未編集なら確認なしでテンプレート適用
   let dialogs = 0;
   page.on("dialog", async d => { dialogs++; await d.dismiss(); });
-  await page.selectOption("#tplSel", "2");
+  await page.selectOption("#tplSel", "7");
   ok(dialogs === 0 && (await val()).includes("roiManager(\"count\")"), `${W} 未編集の初期コードは確認なしでテンプレート適用`);
+  ok((await page.locator("#pracTpl, #pracGuide .prac-guide").count()) === 1 && (await page.locator("#tplSel option").count()) === 11, `${W} テンプレート10種と解説ガイドが表示される`);
+  // 解説ガイドを残したまま、編集内容を守る確認と括弧チェックが機能する
+  await page.selectOption("#tplSel", "3");
+  ok((await val()).includes("function circleArea") && (await page.locator("#pracIssue").count()) === 0, `${W} 基礎テンプレート（関数定義）が誤警告なく入る`);
   // 初期コメントを残したまま書き足した場合も、テンプレートで無言上書きしない（旧判定の欠陥の回帰）
   await page.goto(url + "#/home"); await page.evaluate(() => localStorage.clear()); await page.goto(url + "#/practice"); await page.waitForSelector("#macroEd");
   const starter = await val();
