@@ -266,3 +266,21 @@ pre.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;backgr
   overflow-x:auto;white-space:pre;font-family:ui-monospace,Menlo,Consolas,monospace;margin:6px 0}
 .sim-out{overflow-wrap:anywhere}
 @media (max-width: 859px){ .prac-sim{padding:11px 11px} }
+
+/* ダークモード（端末の配色設定に追随する。切替ボタンは置かない） */
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme:dark;
+    --bg:#0d1319; --panel:#151e28; --ink:#e4ecf4; --muted:#9db2c6; --faint:#71879c;
+    --line:#2b3b4e; --acc:#57c2d6; --acc-soft:#14323c; --ok:#4cc38a; --ok-bg:#123527;
+    --bad:#ff9d94; --bad-bg:#40201c; --warn:#ffcf6e; --warn-bg:#3d3016;
+  }
+  .lead{color:var(--muted)}
+  .gsearch input,.rel-chips a,.fig,.choice,.explain{background:#101922}
+  .prac-tabs button,.prac-ed,.prac-ref,.fn-row,.sim-ln{background:var(--panel)}
+  .ed-gutter{color:#63798e;background:#101922}
+  #macroEd{background:var(--panel);color:var(--ink)}
+  pre.code{background:#101922}
+  .bm-btn.on{color:#ffcf6e;border-color:#8a6d1f;background:#3d3016}
+  mark{background:#ffe58a;color:#1a2332}
+}
