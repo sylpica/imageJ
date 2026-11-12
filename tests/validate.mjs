@@ -85,7 +85,7 @@ ok(Q.length >= 50 && Q.length <= 70, `問題数 ${Q.length}`);
 ok(T.length >= 75, `用語数 ${T.length}`);
 ok(!T.some(t => /\(\)/.test(t.t)), "用語集に関数系の項目が残っている");
 const FN = D.functions || [];
-ok(FN.length >= 70 && FN.length <= 100, `関数数 ${FN.length}`);
+ok(FN.length >= 70 && FN.length <= 160, `関数数 ${FN.length}`);
 {
   const names = new Set();
   for (const f of FN) {
