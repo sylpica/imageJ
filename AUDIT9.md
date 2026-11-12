@@ -50,13 +50,13 @@
 - sim-audit8 の getValue 期待値: リファレンス収録（R-2）に伴い「説明を省略」経路から説明文表示に変化したため追随。
 
 ## 検証結果（統合後、Muse 側で実施）
-- リポジトリ検証: validate ALL CHECKS PASSED（official=580、functions=112、lessons=28、questions=63、terms=80、docChapters=12、docEntries=51、answerDist=17,15,16,15、最長正解バイアス 11.1%）。audit 247 件すべて PASS（AUDIT ALL PASSED、直接実行で確認）。overflow scanned=822、problems=0。
+- リポジトリ検証: validate ALL CHECKS PASSED（official=580、functions=112、lessons=28、questions=63、terms=80、docChapters=12、docEntries=51、answerDist=17,15,16,15、最長正解バイアス 11.1%）。audit 247 件すべて PASS（AUDIT ALL PASSED、直接実行で確認）。overflow scanned=846、problems=0（OVERFLOW ZERO）。
 - シミュレーション検証: 4バッテリ合計 811 件すべて合格（sim-battery 341、sim-audit3 153、sim-audit8 150、本ラウンド新設 sim-audit9 167）。
 - レイアウト: layout-smoke 60/60（P-1 の再発条件＝最長ガイドのテンプレート選択＋860×700／1280×600 でエディタ 150px 以上を閾値化）。dark-smoke 7/7。audit9-ui 10/10（P-2 の複数行字下げ、F-1 の不正ハッシュ4経路、F-2 の下書き保持の前提）。
 - 配信後に公開 URL の md5 で一致を確認する。
 
 ## 残件（任意・未実施）
-- 関数リファレンスへの Roi.* 群（Roi.getBounds 等）の個別項目追加。シミュレーションでは動作するが、リファレンス項目としては未収録。方針により任意残件は実施せず、本記録に留める。
+- 関数リファレンスへの Roi.* 群（Roi.getBounds 等）の個別項目追加。シミュレーションでは動作するが、リファレンス項目としては未収録。方針により任意残件は実施せず、本記録に留める。→ **その後、ユーザー指示「フェイリス側で完成させて」を受け、AUDIT10 で実施・解消した（関数数 112 → 131）。**
 - 本物の ImageJ／Fiji での実行値の突合（監査セッション側でも権限により未実施）。S-2、S-9〜S-11、S-15 は公式ソース読解に基づく（Muse 側でも Interpreter.java／Functions.java の実コードで再確認済み）。
 - iOS Safari 実機、スクリーンリーダーでの確認。
 - ドキュメント出典 URL の到達性と要約の原典照合（監査環境から imagej.net へ到達できなかったため未実施）。
