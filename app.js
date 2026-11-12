@@ -523,6 +523,7 @@ function vPractice(){
     '<div class="prac-tabs" role="tablist">' +
       '<button type="button" role="tab" data-ptab="code">コード</button>' +
       '<button type="button" role="tab" data-ptab="ref">関数リファレンス</button></div>' +
+    '<div class="prac-wb">' +
     '<div class="prac" id="pracRoot">' +
     '<section class="prac-ed">' +
       '<div class="prac-tools">' +
@@ -550,7 +551,7 @@ function vPractice(){
       '<button type="button" class="btn" id="simRun">説明を実行</button>' +
       '<span class="sim-state" id="simState" role="status"></span></div>' +
       '<div id="simOut" class="sim-out"></div>' +
-    "</section>" +
+    "</section></div>" +
     '<p class="foot-note">マクロの実行はこのアプリでは行えません。「実行シミュレーション」はモデル画像を前提にコードの動きを言葉で説明するもので、実際の実行結果ではありません。書いたコードは .ijm で保存し、Fiji ではファイルをウィンドウへドラッグ＆ドロップ（または File &gt; Open…）してスクリプトエディタで開き、［Run］で実行してください。ImageJ の Plugins &gt; Macros &gt; Run… でも実行できますが、文字列中の日本語は文字化けします。エディタ内の Tab はインデントになり、Esc の後の Tab でフォーカスが移ります。下書きはこの端末に自動保存されます。</p>';
   view.innerHTML = html;
   var root = document.getElementById("pracRoot");
