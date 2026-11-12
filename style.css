@@ -270,12 +270,12 @@ pre.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;backgr
 /* 練習画面: PCでは1画面に収める作業台レイアウト（各パネル内スクロール）。
    恒常的な説明文（.foot-note）は作業台の外＝画面の下に置く */
 @media (min-width: 860px){
-  .prac-wb{display:grid;grid-template-rows:minmax(0,1.05fr) minmax(0,.95fr);gap:12px;
-    height:calc(100dvh - 132px);min-height:560px}
+  .prac-wb{display:grid;grid-template-rows:minmax(0,1.25fr) minmax(0,.75fr);gap:12px;
+    height:calc(100dvh - 132px);min-height:430px}
   .prac-wb .prac{height:100%;min-height:0}
   .prac-wb .ed-wrap{flex:1;min-height:0;max-height:none}
   .prac-wb .prac-ref-body{flex:1;min-height:0;max-height:none}
-  .prac-wb #pracGuide{flex:none;max-height:168px;overflow-y:auto}
+  .prac-wb #pracGuide{flex:none;max-height:118px;overflow-y:auto}
   .prac-wb .prac-sim{margin-top:0;display:flex;flex-direction:column;min-height:0}
   .prac-wb .sim-out{flex:1;min-height:0;overflow-y:auto;margin-top:10px;padding-right:2px}
 }

@@ -74,3 +74,14 @@ Claude 側のみが発見し、検証で正しいと確認した重大指摘:
 1536×864 で作業台が1画面に収まり注記が画面下にあること、シミュレーション出力の
 内部スクロール、375px モバイル、ダーク時のシミュレーションパネル色）。
 validate / audit / overflow（822件・0件）も全て通過。
+
+## 訂正（2026-11-13、第2ラウンド監査 AUDIT8 の N1 による）
+上記「検証で Claude 側の指摘を退けたもの」の M1 に関する判断は誤りだった。
+マクロの run("16-bit") が辿るのは ij/process/TypeConverter.java の
+convertByteToShort であり、ソース L159-165 は (short)(pixels8[i]&0xff) の
+コピーのみでスケーリングしない。doScaling（既定 true）は ImageConverter の
+変換経路に関するもので、この経路には適用されない。
+したがって 8→16bit は値を 0〜255 のまま保持するのが正しく、×257 の説明と
+実装は第2ラウンドで修正済み（詳細は AUDIT8.md の N1）。
+一次資料リストの ImageConverter.java への注記「doScaling の既定は true」も、
+この経路の根拠としては無効だった。
