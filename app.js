@@ -672,6 +672,17 @@ function vPractice(){
   document.getElementById("pracKw").addEventListener("input", function(){ prac.kw = this.value; prac.fn = null; renderPracRef(); });
   view.querySelectorAll("[data-pcat]").forEach(function(b){ b.addEventListener("click", function(){ setCat(b.getAttribute("data-pcat")); prac.fn = null; renderPracRef(); }); });
   renderPracRef();
+  /* PC 作業台の高さ：ヘッダー（折り返しを含む実測）と見出しを差し引いて決める（決め打ちにしない） */
+  var wbEl = view.querySelector(".prac-wb");
+  function fitWb(){
+    if (!wbEl || !wbEl.isConnected){ window.removeEventListener("resize", fitWb); return; }
+    if (window.innerWidth < 860 || location.hash.indexOf("practice") < 0){ wbEl.style.height = ""; return; }
+    var hdr = document.querySelector(".app-header"), h1 = view.querySelector("h1.page");
+    var top = (hdr ? hdr.offsetHeight : 54) + 20 + (h1 ? h1.offsetHeight + 16 : 50) + 8;
+    wbEl.style.height = Math.max(430, window.innerHeight - top) + "px";
+  }
+  fitWb();
+  window.addEventListener("resize", fitWb);
   function renderPracRef(){
     var body = document.getElementById("pracRefBody");
     if (!body) return;
@@ -795,13 +806,26 @@ function vPractice(){
 function simErr(line, text, cause){ return { __simErr: 1, line: line, text: text, cause: cause || "" }; }
 var SIM_UNK = { __unk: 1 };
 function simIsUnk(v){ return v === SIM_UNK || (v && typeof v === "object" && v.__unk === 1); }
+/* ImageJ の数値表示（Interpreter.toString → IJ.d2s(x, 4, 9)）に合わせた整形 */
+function simFmtNum(x){
+  if (x !== x) return "NaN";
+  if (!isFinite(x)) return x > 0 ? "Infinity" : "-Infinity";
+  if (x === 0) return "0";
+  if (Number.isInteger(x) && x >= -2147483648 && x < 2147483648) return String(x);
+  var magnitude = Math.ceil(Math.log10(Math.abs(x)) + 0.223e-9);
+  var decimals = 9 - magnitude, str;
+  if (decimals < 0 || magnitude < -4){
+    str = x.toExponential(4).replace(/e([+-])/, "E$1").replace(/e/, "E").replace(/E\+/, "E");
+  } else {
+    if (decimals > 4) decimals = Math.max(4, decimals - 5);
+    str = x.toFixed(decimals);
+  }
+  if (str.indexOf("E") < 0 && str.indexOf(".") >= 0) str = str.replace(/0+$/, "").replace(/\.$/, "");
+  return str;
+}
 function simFmt(v){
   if (simIsUnk(v)) return "（実行時に決まる値）";
-  if (typeof v === "number"){
-    if (v !== v) return "NaN";
-    if (!isFinite(v)) return v > 0 ? "Infinity" : "-Infinity";
-    return String(Math.round(v * 10000) / 10000);
-  }
+  if (typeof v === "number") return simFmtNum(v);
   if (typeof v === "string") return v;
   if (typeof v === "boolean") return v ? "true" : "false";
   if (Array.isArray(v)){
@@ -940,6 +964,13 @@ function simParse(code){
       optSemi(); return { t: "return", v: v, line: t.line };
     }
     if (t.k === "id" && (t.v === "break" || t.v === "continue")){ next(); optSemi(); return { t: t.v, line: t.line }; }
+    if (t.k === "id" && t.v === "macro" && toks[pos + 1] && (toks[pos + 1].k === "str" || (toks[pos + 1].k === "op" && toks[pos + 1].v === "{"))){
+      next();
+      var mname = null;
+      if (peek().k === "str") mname = next().v;
+      var mbody = parseBlockOrStmt();
+      return { t: "macroblock", name: mname, body: mbody.t === "block" ? mbody.body : [mbody], line: t.line };
+    }
     var e = parseExpr(); optSemi();
     return { t: "expr", e: e, line: t.line };
   }
@@ -960,17 +991,45 @@ function simParse(code){
     return l;
   }
   function parseTernary(){
-    var c = parseBinary(0);
+    var c = parseLogical();
     if (isOp("?")){ next(); var a = parseExpr(); expect(":"); var b = parseTernary(); return { t: "tern", c: c, a: a, b: b, line: c.line }; }
     return c;
   }
-  var LEVELS = [["||"], ["&&"], ["|"], ["^"], ["&"], ["==", "!="], ["<", "<=", ">", ">="], ["<<", ">>"], ["+", "-"], ["*", "/", "%"]];
-  function parseBinary(lv){
-    if (lv >= LEVELS.length) return parseUnary();
-    var l = parseBinary(lv + 1);
+  /* ImageJ の演算子階層（ij.macro.Interpreter）: && と || は同じ階層で右結合。
+     比較はその内側、+ - はさらに内側、* / % とビット演算 & | ^ << >> は同じ階層（getTerm） */
+  function parseLogical(){
+    var l = parseComparison();
+    var t = peek();
+    if (t.k === "op" && (t.v === "&&" || t.v === "||")){
+      next();
+      var r = parseLogical();
+      return { t: "logic", op: t.v, l: l, r: r, line: t.line };
+    }
+    return l;
+  }
+  function parseComparison(){
+    var l = parseAdditive();
     for (;;){
       var t = peek();
-      if (t.k === "op" && LEVELS[lv].indexOf(t.v) >= 0){ next(); var r = parseBinary(lv + 1); l = { t: "bin", op: t.v, l: l, r: r, line: t.line }; }
+      if (t.k === "op" && ["==", "!=", "<", "<=", ">", ">="].indexOf(t.v) >= 0){ next(); var r = parseAdditive(); l = { t: "bin", op: t.v, l: l, r: r, line: t.line }; }
+      else break;
+    }
+    return l;
+  }
+  function parseAdditive(){
+    var l = parseTerm();
+    for (;;){
+      var t = peek();
+      if (t.k === "op" && (t.v === "+" || t.v === "-")){ next(); var r = parseTerm(); l = { t: "bin", op: t.v, l: l, r: r, line: t.line }; }
+      else break;
+    }
+    return l;
+  }
+  function parseTerm(){
+    var l = parseUnary();
+    for (;;){
+      var t = peek();
+      if (t.k === "op" && ["*", "/", "%", "&", "|", "^", "<<", ">>"].indexOf(t.v) >= 0){ next(); var r = parseUnary(); l = { t: "bin", op: t.v, l: l, r: r, line: t.line }; }
       else break;
     }
     return l;
@@ -989,9 +1048,15 @@ function simParse(code){
       if (t.k === "op" && t.v === "."){
         next(); var m = next(); if (m.k !== "id") throw simErr(m.line, "「.」の後に名前が必要です", "");
         if (m.v === "length" && !isOp("(")){ e = { t: "length", obj: e, line: t.line }; continue; }
-        if (e.t === "var"){ e = { t: "path", parts: [e.name, m.v], line: t.line }; continue; }
+        if (e.t === "var" && Object.prototype.hasOwnProperty.call(SIM_NS, e.name)){ e = { t: "path", parts: [e.name, m.v], line: t.line }; continue; }
         if (e.t === "path"){ e.parts.push(m.v); continue; }
-        throw simErr(t.line, "この「.」の使い方は解釈できませんでした", "配列・文字列の長さは .length で取れます。");
+        if (isOp("(")){
+          next(); var margs = [];
+          if (!isOp(")")){ for (;;){ margs.push(parseExpr()); if (isOp(",")){ next(); continue; } break; } }
+          expect(")");
+          e = { t: "mcall", obj: e, method: m.v, args: margs, line: t.line }; continue;
+        }
+        e = { t: "prop", obj: e, name: m.v, line: t.line }; continue;
       }
       if (t.k === "op" && t.v === "("){
         next(); var args = [];
@@ -1082,14 +1147,9 @@ function simImgPct(img, lo, hi){
   });
   return inside;
 }
-function simIsoData(img){
-  // ImageJ の setAutoThreshold(ISODATA2) → getAutoThreshold の反復平均法を再現（ij.process.ImageProcessor）
-  var h = simHist256(img).slice();
-  var mode = 0;
-  for (var i = 1; i < 256; i++) if (h[i] > h[mode]) mode = i;
-  var maxCount2 = 0;
-  for (var j = 0; j < 256; j++) if (j !== mode && h[j] > maxCount2) maxCount2 = h[j];
-  if (h[mode] > maxCount2 * 2 && maxCount2 !== 0) h[mode] = maxCount2 * 1.5;
+/* IJ_IsoData（ImageProcessor.getAutoThreshold と同一の反復法）。256 階調ヒストグラムに対する実装 */
+function ijIsoDataHist(h0){
+  var h = h0.slice();
   h[0] = 0; h[255] = 0;
   var min = 0; while (min < 255 && h[min] === 0) min++;
   var max = 255; while (max > 0 && h[max] === 0) max--;
@@ -1103,6 +1163,84 @@ function simIsoData(img){
     movingIndex++;
   } while ((movingIndex + 1) <= result && movingIndex < max - 1 && ++guard < 300);
   return Math.round(result);
+}
+/* Default 法：最頻値のピークをクリップしてから IJ_IsoData（AutoThresholder.defaultIsoData） */
+function ijDefaultHist(h0){
+  var h = h0.slice();
+  var mode = 0;
+  for (var i = 1; i < 256; i++) if (h[i] > h[mode]) mode = i;
+  var maxCount2 = 0;
+  for (var j = 0; j < 256; j++) if (j !== mode && h[j] > maxCount2) maxCount2 = h[j];
+  if (h[mode] > maxCount2 * 2 && maxCount2 !== 0) h[mode] = Math.floor(maxCount2 * 1.5);
+  return ijIsoDataHist(h);
+}
+/* IsoData 法（Ridler–Calvard の反復選択法、AutoThresholder.IsoData） */
+function ijRidlerHist(h0){
+  var h = h0, g = 0, i;
+  for (i = 1; i < 256; i++){ if (h[i] > 0){ g = i + 1; break; } }
+  while (g < 255){
+    var l = 0, totl = 0, hh = 0, toth = 0;
+    for (i = 0; i < g; i++){ totl += h[i]; l += h[i] * i; }
+    for (i = g + 1; i < 256; i++){ toth += h[i]; hh += h[i] * i; }
+    if (totl > 0 && toth > 0){
+      l = Math.floor(l / totl); hh = Math.floor(hh / toth);
+      if (g === Math.round((l + hh) / 2)) break;
+    } else break;
+    g++;
+  }
+  return g;
+}
+/* 画像の分布を 256 階調ヒストグラムにする（16/32bit は実際の値域を表示範囲として換算） */
+function simHistNorm(img){
+  if (!img.buckets) return null;
+  if (img.bit === 8) return simHist256(img);
+  var rg = simImgRange(img); if (!rg || rg[1] <= rg[0]) return null;
+  var hist = new Array(256).fill(0), span = rg[1] - rg[0] + 1;
+  img.buckets.forEach(function(b){
+    var steps = Math.min(256, Math.max(1, b[1] - b[0] + 1));
+    for (var i = 0; i < steps; i++){
+      var v = b[0] + (b[1] - b[0]) * (steps === 1 ? 0 : i / (steps - 1));
+      var bin = Math.max(0, Math.min(255, Math.floor((v - rg[0]) / span * 256)));
+      hist[bin] += b[2] / steps;
+    }
+  });
+  return hist;
+}
+function simGaussBlur1d(h, sigma){
+  var r = Math.ceil(sigma * 3), kern = [], sum = 0, i, k;
+  for (k = -r; k <= r; k++){ var w = Math.exp(-(k * k) / (2 * sigma * sigma)); kern.push(w); sum += w; }
+  kern = kern.map(function(w){ return w / sum; });
+  var out = new Array(h.length).fill(0);
+  for (i = 0; i < h.length; i++){
+    var acc = 0;
+    for (k = -r; k <= r; k++){ var j = Math.max(0, Math.min(h.length - 1, i + k)); acc += h[j] * kern[k + r]; }
+    out[i] = acc;
+  }
+  return out;
+}
+/* 引数なし setAutoThreshold / 閾値未設定の Convert to Mask が使う旧方式（ISODATA2）。
+   ピークのクリップ＋IJ_IsoData で閾値を決め、平滑化したヒストグラムの最頻値の位置で前景の側を選ぶ */
+function simIsodata2(img){
+  var h0 = simHistNorm(img);
+  if (!h0) return null;
+  var t = ijDefaultHist(h0);
+  var sm = simGaussBlur1d(h0, 2.0);
+  var mode = 0, total = 0, i;
+  for (i = 0; i < 256; i++){ total += sm[i]; if (sm[i] > sm[mode]) mode = i; }
+  var avg = total / 256, min = 0, max = 255;
+  while (min < 255 && h0[min] === 0) min++;
+  while (max > 0 && h0[max] === 0) max--;
+  var lo, hi;
+  if (sm[mode] / avg > 1.5){
+    if ((max - mode) > (mode - min)){ lo = t; hi = 255; } else { lo = 0; hi = t; }
+  } else { lo = 0; hi = t; }
+  if (img.bit === 8) return { lo: lo, hi: hi, t: t };
+  var rg = simImgRange(img), span = rg[1] - rg[0] + 1;
+  return { lo: Math.round(rg[0] + lo / 256 * span), hi: Math.round(rg[0] + hi / 256 * span), t: Math.round(rg[0] + t / 256 * span) };
+}
+function simIsoData(img){
+  var h = simHistNorm(img);
+  return h ? ijDefaultHist(h) : SIM_UNK;
 }
 function simOtsu(img){
   if (!img.buckets) return SIM_UNK;
@@ -1124,8 +1262,8 @@ function simOtsu(img){
   return thr;
 }
 /* --- 静的チェック（未知の関数・引数の数・関数の重複など） --- */
-var SIM_ARITY_OVERRIDE = { run: { min: 1, max: 2 }, print: { min: 1, max: Infinity }, log: { min: 1, max: Infinity }, newArray: { min: 0, max: Infinity }, exit: { min: 0, max: 1 }, getStatistics: { min: 1, max: 6 }, showMessage: { min: 1, max: 2 }, waitForUser: { min: 0, max: 2 }, call: { min: 1, max: Infinity }, "Math.max": { min: 1, max: Infinity }, "Math.min": { min: 1, max: Infinity },
-  close: { min: 0, max: 2 }, open: { min: 0, max: 2 }, split: { min: 1, max: 2 }, parseInt: { min: 1, max: 2 }, getResult: { min: 1, max: 3 }, setThreshold: { min: 2, max: 3 }, setMinAndMax: { min: 2, max: 3 }, makeRectangle: { min: 4, max: 5 }, "Array.sort": { min: 1, max: 2 }, random: { min: 0, max: 2 }, indexOf: { min: 2, max: 3 }, substring: { min: 2, max: 3 }, setAutoThreshold: { min: 0, max: 1 }, saveAs: { min: 1, max: 2 }, makeLine: { min: 4, max: Infinity }, showProgress: { min: 1, max: 2 }, runMacro: { min: 1, max: 2 }, newImage: { min: 5, max: 7 }, "Dialog.addNumber": { min: 2, max: 5 }, "Dialog.addString": { min: 2, max: 3 }, "Dialog.addChoice": { min: 2, max: 3 } };
+var SIM_ARITY_OVERRIDE = { run: { min: 1, max: 2 }, print: { min: 0, max: Infinity }, log: { min: 0, max: Infinity }, newArray: { min: 0, max: Infinity }, exit: { min: 0, max: 1 }, getStatistics: { min: 1, max: 6 }, showMessage: { min: 1, max: 2 }, waitForUser: { min: 0, max: 2 }, call: { min: 1, max: Infinity }, "Math.max": { min: 1, max: Infinity }, "Math.min": { min: 1, max: Infinity },
+  close: { min: 0, max: 2 }, open: { min: 0, max: 2 }, split: { min: 1, max: 2 }, parseInt: { min: 1, max: 2 }, getResult: { min: 1, max: 3 }, setThreshold: { min: 2, max: 3 }, setMinAndMax: { min: 2, max: 3 }, makeRectangle: { min: 4, max: 5 }, "Array.sort": { min: 1, max: 2 }, random: { min: 0, max: 2 }, indexOf: { min: 2, max: 3 }, substring: { min: 2, max: 3 }, setAutoThreshold: { min: 0, max: 1 }, saveAs: { min: 1, max: 2 }, makeLine: { min: 4, max: Infinity }, showProgress: { min: 1, max: 2 }, runMacro: { min: 1, max: 2 }, newImage: { min: 5, max: 7 }, setColor: { min: 1, max: 3 }, "Dialog.addNumber": { min: 2, max: 5 }, "Dialog.addString": { min: 2, max: 3 }, "Dialog.addChoice": { min: 2, max: 3 } };
 function simArity(sig){
   var m = /\(([\s\S]*)\)/.exec(sig); if (!m) return null;
   var inner = m[1].trim(); if (!inner) return { min: 0, max: 0 };
@@ -1150,7 +1288,7 @@ function simStaticChecks(prog, funcs){
         if (Object.prototype.hasOwnProperty.call(funcs, name)){
           if (e.args.length !== funcs[name].params.length)
             diags.push({ sev: "err", line: e.line, text: "関数 " + name + " の引数の数が違います", cause: "定義は " + funcs[name].params.length + " 個の引数ですが、" + e.args.length + " 個渡しています。" });
-        } else if (!f && !Object.prototype.hasOwnProperty.call(SIM_EXTRA, name)){
+        } else if (!f && !Object.prototype.hasOwnProperty.call(SIM_EXTRA, name) && !Object.prototype.hasOwnProperty.call(SIM_OFFICIAL, name)){
           diags.push({ sev: "err", line: e.line, text: "「" + name + "」は定義されていない関数です", cause: "関数リファレンスにも、このコード内の function 定義にもありません。綴り違いか、定義のし忘れの可能性があります。ImageJ ではここでエラーになり止まります。" });
         } else if (f){
           var ar = SIM_ARITY_OVERRIDE[name] || simArity(f.sig);
@@ -1160,17 +1298,26 @@ function simStaticChecks(prog, funcs){
         e.args.forEach(function(a){ walkExpr(a, line); });
         break;
       }
-      case "bin": walkExpr(e.l, line); walkExpr(e.r, line); break;
+      case "bin": case "logic": walkExpr(e.l, line); walkExpr(e.r, line); break;
       case "un": case "pre": case "post": walkExpr(e.e, line); break;
       case "assign": walkExpr(e.target, line); walkExpr(e.v, line); break;
       case "index": walkExpr(e.obj, line); walkExpr(e.ix, line); break;
-      case "length": walkExpr(e.obj, line); break;
+      case "length": case "prop": walkExpr(e.obj, line); break;
+      case "mcall": {
+        var STR_METHODS = { length: 1, contains: 1, startsWith: 1, endsWith: 1, charAt: 1, indexOf: 1, lastIndexOf: 1, matches: 1, toUpperCase: 1, toLowerCase: 1, trim: 1, toString: 1, substring: 1, replace: 1, split: 1 };
+        if (!STR_METHODS[e.method] && !funcByName(e.method) && !Object.prototype.hasOwnProperty.call(SIM_OFFICIAL, e.method) && !Object.prototype.hasOwnProperty.call(SIM_OFFICIAL, "Array." + e.method))
+          diags.push({ sev: "err", line: e.line, text: "「" + e.method + "」は定義されていないメソッドです", cause: "ImageJ の文字列・配列メソッドにも存在しない名前です。綴り違いの可能性があります。ImageJ ではここでエラーになり止まります。" });
+        walkExpr(e.obj, line);
+        e.args.forEach(function(a){ walkExpr(a, line); });
+        break;
+      }
       case "tern": walkExpr(e.c, line); walkExpr(e.a, line); walkExpr(e.b, line); break;
     }
   }
   function walkStmt(st, inFunc, inLoop){
     switch (st.t){
       case "funcdef": break; /* 本体は呼び出し時に動的に見る */
+      case "macroblock": st.body.forEach(function(s){ walkStmt(s, inFunc, inLoop); }); break;
       case "expr": walkExpr(st.e, st.line); break;
       case "vardecl": st.decls.forEach(function(d){ walkExpr(d.init, st.line); }); break;
       case "block": st.body.forEach(function(s){ walkStmt(s, inFunc, inLoop); }); break;
@@ -1203,7 +1350,9 @@ function simExprStr(e){
     case "path": return e.parts.join(".");
     case "length": return simExprStr(e.obj) + ".length";
     case "index": return simExprStr(e.obj) + "[" + simExprStr(e.ix) + "]";
-    case "bin": return simExprStr(e.l) + " " + e.op + " " + simExprStr(e.r);
+    case "bin": case "logic": return simExprStr(e.l) + " " + e.op + " " + simExprStr(e.r);
+    case "mcall": return simExprStr(e.obj) + "." + e.method + "(" + e.args.map(simExprStr).join(", ") + ")";
+    case "prop": return simExprStr(e.obj) + "." + e.name;
     case "un": return e.op + simExprStr(e.e);
     case "pre": case "post": return e.op + simExprStr(e.e);
     case "assign": return simExprStr(e.target) + " " + e.op + " " + simExprStr(e.v);
@@ -1307,9 +1456,27 @@ function simRunProgram(code){
       }
       case "un": {
         var u = evExpr(e.e);
-        if (e.op === "!"){ var t = truthy(u); return t === null ? SIM_UNK : (t ? 0 : 1); }
+        if (e.op === "!"){
+          if (simIsUnk(u)) return SIM_UNK;
+          if (u === 0 || u === 1) return u === 0 ? 1 : 0;
+          throw simErr(e.line, "「!」の相手が 0 か 1 になっていません（値：" + simFmt(u) + "）", "ImageJ では「!」は真偽値にだけ使え、0 か 1 でない値では \"Boolean expected\" エラーになります。");
+        }
         var un = num(u, e.line); return simIsUnk(un) ? SIM_UNK : (e.op === "-" ? -un : e.op === "~" ? ~un : un);
       }
+      case "logic": {
+        /* ImageJ の && / || : 短絡評価せず両辺を必ず評価し、両辺とも 0 か 1 でなければエラー */
+        var ll = evExpr(e.l), lr = evExpr(e.r);
+        if (simIsUnk(ll) || simIsUnk(lr)) return SIM_UNK;
+        if (ll !== 0 && ll !== 1) throw simErr(e.line, "「" + e.op + "」の左辺が 0 か 1 になっていません（値：" + simFmt(ll) + "）", "ImageJ では && / || の両辺は真偽値（0 か 1）でなければエラーになります。短絡評価もしないため、右辺は左辺の結果にかかわらず必ず評価されます。");
+        if (lr !== 0 && lr !== 1) throw simErr(e.line, "「" + e.op + "」の右辺が 0 か 1 になっていません（値：" + simFmt(lr) + "）", "ImageJ では && / || の両辺は真偽値（0 か 1）でなければエラーになります。短絡評価もしないため、右辺は左辺の結果にかかわらず必ず評価されます。");
+        return e.op === "&&" ? (ll & lr) : (ll | lr);
+      }
+      case "path": {
+        if (e.parts.join(".") === "File.separator") return "/";
+        return SIM_UNK;
+      }
+      case "prop": return SIM_UNK;
+      case "mcall": return evMethod(e);
       case "pre": case "post": {
         var tgt = e.e, cur = evExpr(tgt), nn = num(cur, e.line);
         if (simIsUnk(nn)) return SIM_UNK;
@@ -1319,9 +1486,12 @@ function simRunProgram(code){
       }
       case "bin": return evBin(e);
       case "tern": {
+        if (e.a.t === "str") throw simErr(e.line, "文字列を返す三項演算子は ImageJ では使えません", "公式の Interpreter は \"String operands not supported\" エラーにします。三項演算子は数値専用です。");
         var c = truthy(evExpr(e.c));
+        var va = evExpr(e.a), vb = evExpr(e.b);
         if (c === null) return SIM_UNK;
-        return evExpr(c ? e.a : e.b);
+        var sel = c ? va : vb;
+        return typeof sel === "string" ? SIM_UNK : sel;
       }
       case "assign": {
         var rv = evExpr(e.v);
@@ -1348,14 +1518,14 @@ function simRunProgram(code){
     throw simErr(line, "代入先が不正です", "");
   }
   function evBin(e){
-    if (e.op === "&&" || e.op === "||"){
-      var lt = truthy(evExpr(e.l));
-      if (lt !== null && ((e.op === "&&" && !lt) || (e.op === "||" && lt))) return lt ? 1 : 0;
-      var rt = truthy(evExpr(e.r));
-      if (lt === null || rt === null) return SIM_UNK;
-      return (e.op === "&&" ? (lt && rt) : (lt || rt)) ? 1 : 0;
-    }
-    var l = evExpr(e.l), r = evExpr(e.r);
+    /* 左に深い木（長い演算子の連鎖）を反復で畳み、再帰が溢れないようにする */
+    var spine = [], node = e;
+    while (node.t === "bin"){ spine.push(node); node = node.l; }
+    var acc = evExpr(node);
+    for (var si = spine.length - 1; si >= 0; si--) acc = evBinOp(spine[si], acc, evExpr(spine[si].r));
+    return acc;
+  }
+  function evBinOp(e, l, r){
     if (e.op === "+"){
       if (typeof l === "string" || typeof r === "string"){
         if (simIsUnk(l) || simIsUnk(r)) return SIM_UNK;
@@ -1399,6 +1569,45 @@ function simRunProgram(code){
       case "<=": return x <= y ? 1 : 0;
       case ">": return x > y ? 1 : 0;
       case ">=": return x >= y ? 1 : 0;
+    }
+    return SIM_UNK;
+  }
+  /* 文字列メソッド呼び出し（s.contains(...) など。ImageJ では文字列関数の第1引数にレシーバが入る） */
+  function evMethod(e){
+    var o = evExpr(e.obj);
+    if (simIsUnk(o)) return SIM_UNK;
+    var m = e.method;
+    var av = e.args.map(function(a){ return evExpr(a); });
+    if (typeof o === "string"){
+      switch (m){
+        case "length": return o.length;
+        case "contains": return o.indexOf(String(av[0])) >= 0 ? 1 : 0;
+        case "startsWith": return o.indexOf(String(av[0])) === 0 ? 1 : 0;
+        case "endsWith": { var suf = String(av[0]); return suf === "" ? 1 : (o.slice(-suf.length) === suf ? 1 : 0); }
+        case "charAt": { var ci = num(av[0], e.line); if (simIsUnk(ci)) return SIM_UNK; if (ci < 0 || ci >= o.length) throw simErr(e.line, "charAt の位置（" + ci + "）が文字列の長さ（" + o.length + "）を超えています", "ImageJ ではここでエラーになり止まります。"); return o.charCodeAt(ci); }
+        case "indexOf": return o.indexOf(String(av[0]), typeof av[1] === "number" ? av[1] : 0);
+        case "lastIndexOf": return o.lastIndexOf(String(av[0]));
+        case "matches": { try { return new RegExp("^(?:" + String(av[0]) + ")$").test(o) ? 1 : 0; } catch (ex2) { return SIM_UNK; } }
+        case "toUpperCase": return o.toUpperCase();
+        case "toLowerCase": return o.toLowerCase();
+        case "trim": return o.trim();
+        case "toString": return o;
+        case "substring": {
+          var bi = av[0], bj = av.length > 1 ? av[1] : o.length;
+          if (typeof bi !== "number" || typeof bj !== "number" || bi < 0 || bj < bi || bj > o.length)
+            throw simErr(e.line, "substring の範囲（" + bi + "〜" + bj + "）が文字列の長さ（" + o.length + "）を超えています", "ImageJ ではここでエラーになり止まります。lengthOf で長さを確認してください。");
+          return o.substring(bi, bj);
+        }
+        case "replace": return simReplaceStr(o, av[0], av[1]);
+        case "split": return simSplitStr(o, av.length ? av[0] : undefined, e.line);
+      }
+      if (Object.prototype.hasOwnProperty.call(SIM_OFFICIAL, m) || funcByName(m)){ step(e.line, "文字列のメソッド " + m + " を実行します（動きの説明は省略します）"); return SIM_UNK; }
+      throw simErr(e.line, "「" + m + "」は文字列に使えないメソッドです", "ImageJ にも存在しない名前です。綴り違いの可能性があります。");
+    }
+    if (Array.isArray(o)){
+      if (m === "length") return o.length;
+      if (Object.prototype.hasOwnProperty.call(SIM_OFFICIAL, "Array." + m)){ step(e.line, "配列のメソッド Array." + m + " を実行します（動きの説明は省略します）"); return SIM_UNK; }
+      throw simErr(e.line, "「" + m + "」は配列に使えないメソッドです", "ImageJ にも存在しない名前です。綴り違いの可能性があります。");
     }
     return SIM_UNK;
   }
@@ -1446,6 +1655,7 @@ function simRunProgram(code){
     if (S.halt) return;
     switch (st.t){
       case "funcdef": return;
+      case "macroblock": step(st.line, "マクロ「" + (st.name || "（名前なし）") + "」を実行します"); execBlock(st.body); return;
       case "vardecl": execVarDecl(st); return;
       case "block": execBlock(st.body); return;
       case "expr": {
@@ -1457,7 +1667,7 @@ function simRunProgram(code){
         return;
       }
       case "if": {
-        var c = truthy(evExpr(st.cond));
+        var c = condBool(evExpr(st.cond), st.line);
         if (c === null){
           step(st.line, "条件（" + simExprStr(st.cond) + "）は実行時の値で決まります。ここでは「真」の側で説明します");
           execStmt(st.then);
@@ -1474,15 +1684,14 @@ function simRunProgram(code){
     }
   }
   function execLoop(st){
-    var isDo = st.t === "do", count = 0, capped = false;
+    var isDo = st.t === "do", count = 0;
     S.suppress++;
     try { if (st.init){ if (st.init.t === "vardecl") execVarDecl(st.init); else evExpr(st.init); } } finally { S.suppress--; }
     step(st.line, (st.t === "for" ? "for" : st.t) + " の繰り返しに入ります" + (st.init ? "（" + simExprStr(st.init) + "）" : ""));
     for (;;){
-      if (count >= 10000){ capped = true; break; }
       var go = true;
       if (!isDo || count > 0){
-        if (st.cond){ var c = truthy(evExpr(st.cond)); if (c === null){ if (count === 0){ step(st.line, "繰り返しの条件は実行時の値で決まるため、1回分だけ説明します"); } else break; } else if (!c) break; }
+        if (st.cond){ var c = condBool(evExpr(st.cond), st.line); if (c === null){ if (count === 0){ step(st.line, "繰り返しの条件は実行時の値で決まるため、1回分だけ説明します"); } else break; } else if (!c) break; }
       }
       count++;
       spendBudget(st.line);
@@ -1500,15 +1709,31 @@ function simRunProgram(code){
       try { if (st.inc) evExpr(st.inc); } finally { S.suppress--; }
       if (S.halt) break;
     }
-    if (capped) throw simErr(st.line, "繰り返しが 10,000 回を超えました", "条件がいつまでも真になる無限ループの可能性があります。終了条件を確認してください。");
     step(st.line, "繰り返しは全 " + count + " 回で終了します");
   }
+  /* if / for / while の条件：ImageJ では 0 か 1 でなければエラー（checkBoolean）。不明なら null */
+  function condBool(v, line){
+    if (simIsUnk(v)) return null;
+    if (v === 0) return false;
+    if (v === 1) return true;
+    throw simErr(line, "条件が 0 か 1 になっていません（値：" + simFmt(v) + "）", "ImageJ では if / while / for の条件は真偽値（0 か 1）でなければ \"Boolean expression expected\" エラーになります。== や < などの比較で条件を書いてください。");
+  }
   (function preGlobals(stmts){
+    function hasCall(e){
+      if (!e || typeof e !== "object") return false;
+      if (e.t === "call" || e.t === "mcall") return true;
+      return Object.keys(e).some(function(k){ var v = e[k]; return Array.isArray(v) ? v.some(hasCall) : hasCall(v); });
+    }
     stmts.forEach(function(st){
       if (!st || st.t === "funcdef") return;
       if (st.t === "vardecl") st.decls.forEach(function(d){
-        if (!Object.prototype.hasOwnProperty.call(S.globals, d.name))
+        if (!Object.prototype.hasOwnProperty.call(S.globals, d.name)){
+          /* ImageJ は var の初期化式を本体の実行前に評価する（saveGlobals2）。呼び出しを含まない式はここで先に評価する */
+          if (d.init && !hasCall(d.init)){
+            try { S.globals[d.name] = evExpr(d.init); return; } catch (ex) { /* 評価できない初期化式は従来どおり 0 扱い */ }
+          }
           S.globals[d.name] = d.init && (d.init.t === "num" || d.init.t === "str") ? d.init.v : 0;
+        }
       });
       ["body", "then", "els"].forEach(function(k){
         var v = st[k];
@@ -1597,10 +1822,47 @@ function simRender(r){
   h += "</div>";
   return h;
 }
+/* 名前空間として扱う接頭辞（Array.sort のような呼び出しと、s.contains() のようなメソッド呼び出しを区別する） */
+var SIM_NS = { Array: 1, Math: 1, String: 1, Dialog: 1, File: 1, IJ: 1, List: 1, Table: 1, Stack: 1, Roi: 1, Plot: 1, Overlay: 1, Color: 1 };
 /* リファレンス97件に無いが ImageJ マクロに実在する組み込み（誤検出防止） */
 var SIM_EXTRA = { sin: 1, cos: 1, tan: 1, asin: 1, acos: 1, atan: 1, sinh: 1, cosh: 1, tanh: 1, sqr: 1, minOf: 1, maxOf: 1, toString: 1, getInfo: 1, isNaN: 1, selectWindow: 1, getMetadata: 1, setMetadata: 1, setInfo: 1, getCursorLoc: 1, isKeyDown: 1, getKeyModifiers: 1, screenWidth: 1, screenHeight: 1, getBoolean: 1, getNumber: 1, getString: 1, runMacro: 1,
   "Math.abs": 1, "Math.sqrt": 1, "Math.pow": 1, "Math.exp": 1, "Math.log": 1, "Math.log10": 1, "Math.floor": 1, "Math.ceil": 1, "Math.round": 1, "Math.sin": 1, "Math.cos": 1, "Math.tan": 1, "Math.asin": 1, "Math.acos": 1, "Math.atan": 1, "Math.atan2": 1, "Math.sinh": 1, "Math.cosh": 1, "Math.tanh": 1,
   "String.join": 1, "String.pad": 1, "String.trim": 1, "String.format": 1 };
+/* 公式 functions.html スナップショット（tests/official-functions.txt、552 書式）に載っている関数名。
+   リファレンス未収録でも ImageJ に実在するので、未定義エラーにせず実行時の説明省略で扱う */
+var SIM_OFFICIAL = { "Array.concat": 1, "Array.copy": 1, "Array.deleteIndex": 1, "Array.deleteValue": 1, "Array.fill": 1, "Array.filter": 1, "Array.findMaxima": 1, "Array.findMinima": 1, "Array.fourier": 1, "Array.getSequence": 1, "Array.getStatistics": 1, "Array.getVertexAngles": 1, "Array.print": 1, "Array.rankPositions": 1, "Array.resample": 1, "Array.reverse": 1, "Array.rotate": 1, "Array.show": 1, "Array.slice": 1, "Array.sort": 1, "Array.trim": 1, "Color.getLut": 1, "Color.set": 1, "Color.setBackground": 1, "Color.setBackgroundValue": 1, "Color.setForeground": 1, "Color.setForegroundValue": 1, "Color.setLut": 1, "Color.toArray": 1, "Color.toString": 1, "Color.wavelengthToColor": 1, "Dialog.addCheckbox": 1, "Dialog.addCheckboxGroup": 1, "Dialog.addChoice": 1, "Dialog.addDirectory": 1, "Dialog.addFile": 1, "Dialog.addHelp": 1, "Dialog.addImage": 1, "Dialog.addImageChoice": 1, "Dialog.addMessage": 1, "Dialog.addNumber": 1, "Dialog.addRadioButtonGroup": 1, "Dialog.addSlider": 1, "Dialog.addString": 1, "Dialog.addToSameRow": 1, "Dialog.create": 1, "Dialog.createNonBlocking": 1, "Dialog.getCheckbox": 1, "Dialog.getChoice": 1, "Dialog.getImageChoice": 1, "Dialog.getLocation": 1, "Dialog.getNumber": 1, "Dialog.getRadioButton": 1, "Dialog.getString": 1, "Dialog.setInsets": 1, "Dialog.setLocation": 1, "Dialog.show": 1, "File.append": 1, "File.close": 1, "File.copy": 1, "File.dateLastModified": 1, "File.delete": 1, "File.exists": 1, "File.getDirectory": 1, "File.getName": 1, "File.getNameWithoutExtension": 1, "File.getParent": 1, "File.isDirectory": 1, "File.isFile": 1, "File.lastModified": 1, "File.length": 1, "File.makeDirectory": 1, "File.open": 1, "File.openAsRawString": 1, "File.openAsString": 1, "File.openDialog": 1, "File.openSequence": 1, "File.openUrlAsString": 1, "File.rename": 1, "File.saveString": 1, "File.setDefaultDir": 1, "Fit.doFit": 1, "Fit.doWeightedFit": 1, "Fit.f": 1, "Fit.getEquation": 1, "Fit.p": 1, "IJ.checksum": 1, "IJ.currentMemory": 1, "IJ.deleteRows": 1, "IJ.freeMemory": 1, "IJ.getToolName": 1, "IJ.log": 1, "IJ.maxMemory": 1, "IJ.pad": 1, "IJ.redirectErrorMessages": 1, "IJ.renameResults": 1, "Image.paste": 1, "List.clear": 1, "List.fromArrays": 1, "List.get": 1, "List.getValue": 1, "List.indexOf": 1, "List.set": 1, "List.setList": 1, "List.setMeasurements": 1, "List.toArrays": 1, "Math.abs": 1, "Math.acos": 1, "Math.asin": 1, "Math.atan": 1, "Math.atan2": 1, "Math.ceil": 1, "Math.constrain": 1, "Math.cos": 1, "Math.erf": 1, "Math.exp": 1, "Math.floor": 1, "Math.log": 1, "Math.log10": 1, "Math.map": 1, "Math.max": 1, "Math.min": 1, "Math.pow": 1, "Math.round": 1, "Math.sin": 1, "Math.sqr": 1, "Math.sqrt": 1, "Math.tan": 1, "Math.toDegrees": 1, "Math.toRadians": 1, "Overlay.activateSelection": 1, "Overlay.activateSelectionAndWait": 1, "Overlay.addSelection": 1, "Overlay.cropAndSave": 1, "Overlay.drawEllipse": 1, "Overlay.drawLabels": 1, "Overlay.drawLine": 1, "Overlay.drawRect": 1, "Overlay.drawString": 1, "Overlay.fill": 1, "Overlay.getBounds": 1, "Overlay.indexAt": 1, "Overlay.lineTo": 1, "Overlay.moveSelection": 1, "Overlay.moveTo": 1, "Overlay.removeRois": 1, "Overlay.removeSelection": 1, "Overlay.selectable": 1, "Overlay.setLabelColor": 1, "Overlay.setLabelFontSize": 1, "Overlay.setPosition": 1, "Overlay.setStrokeColor": 1, "Overlay.setStrokeWidth": 1, "Overlay.update": 1, "Overlay.useNamesAsLabels": 1, "Overlay.xor": 1, "Plot.add": 1, "Plot.addHistogram": 1, "Plot.addText": 1, "Plot.create": 1, "Plot.drawBoxes": 1, "Plot.drawGrid": 1, "Plot.drawLine": 1, "Plot.drawNormalizedLine": 1, "Plot.drawShapes": 1, "Plot.drawVectors": 1, "Plot.eneableLive": 1, "Plot.freeze": 1, "Plot.getFrameBounds": 1, "Plot.getLimits": 1, "Plot.getValues": 1, "Plot.makeHighResolution": 1, "Plot.removeNaNs": 1, "Plot.replace": 1, "Plot.setAxisLabelSize": 1, "Plot.setBackgroundColor": 1, "Plot.setColor": 1, "Plot.setFontSize": 1, "Plot.setFormatFlags": 1, "Plot.setFrameSize": 1, "Plot.setJustification": 1, "Plot.setLegend": 1, "Plot.setLimits": 1, "Plot.setLimitsToFit": 1, "Plot.setLineWidth": 1, "Plot.setLogScaleX": 1, "Plot.setLogScaleY": 1, "Plot.setOptions": 1, "Plot.setStyle": 1, "Plot.setXYLabels": 1, "Plot.show": 1, "Plot.showValues": 1, "Plot.showValuesWithLabels": 1, "Plot.update": 1, "Plot.useTemplate": 1, "Property.get": 1, "Property.getInfo": 1, "Property.getNumber": 1, "Property.getValue": 1, "Property.set": 1, "Property.setList": 1, "Property.setSliceLabel": 1, "Roi.contains": 1, "Roi.getBounds": 1, "Roi.getContainedPoints": 1, "Roi.getCoordinates": 1, "Roi.getFeretPoints": 1, "Roi.getFloatBounds": 1, "Roi.getPointPosition": 1, "Roi.getPosition": 1, "Roi.getProperty": 1, "Roi.getSplineAnchors": 1, "Roi.move": 1, "Roi.setAntiAlias": 1, "Roi.setDefaultGroup": 1, "Roi.setFillColor": 1, "Roi.setFontSize": 1, "Roi.setGroup": 1, "Roi.setGroupNames": 1, "Roi.setJustification": 1, "Roi.setMinStrokeWidth": 1, "Roi.setName": 1, "Roi.setPolygonSplineAnchors": 1, "Roi.setPolylineSplineAnchors": 1, "Roi.setPosition": 1, "Roi.setProperty": 1, "Roi.setStrokeColor": 1, "Roi.setStrokeWidth": 1, "Roi.setUnscalableStrokeWidth": 1, "Roi.translate": 1, "RoiManager.associateROIsWithSlices": 1, "RoiManager.delete": 1, "RoiManager.getIndex": 1, "RoiManager.getName": 1, "RoiManager.multiCrop": 1, "RoiManager.restoreCentered": 1, "RoiManager.rotate": 1, "RoiManager.scale": 1, "RoiManager.select": 1, "RoiManager.selectByName": 1, "RoiManager.selectGroup": 1, "RoiManager.selectPosition": 1, "RoiManager.setGroup": 1, "RoiManager.setPosition": 1, "RoiManager.translate": 1, "RoiManager.useNamesAsLabels": 1, "Stack.getActiveChannels": 1, "Stack.getDimensions": 1, "Stack.getDisplayMode": 1, "Stack.getFrameInterval": 1, "Stack.getFrameRate": 1, "Stack.getOrthoViews": 1, "Stack.getOrthoViewsIDs": 1, "Stack.getPosition": 1, "Stack.getStatistics": 1, "Stack.getUnits": 1, "Stack.setActiveChannels": 1, "Stack.setChannel": 1, "Stack.setDimensions": 1, "Stack.setDisplayMode": 1, "Stack.setFrame": 1, "Stack.setFrameInterval": 1, "Stack.setFrameRate": 1, "Stack.setOrthoViews": 1, "Stack.setPosition": 1, "Stack.setSlice": 1, "Stack.setTUnit": 1, "Stack.setUnits": 1, "Stack.setXUnit": 1, "Stack.setYUnit": 1, "Stack.setZUnit": 1, "Stack.swap": 1, "Stack.toggleChannel": 1, "String.append": 1, "String.copy": 1, "String.format": 1, "String.join": 1, "String.pad": 1, "String.setFontSize": 1, "String.show": 1, "String.trim": 1, "Table.applyMacro": 1, "Table.columnExists": 1, "Table.create": 1, "Table.deleteColumn": 1, "Table.deleteRows": 1, "Table.get": 1, "Table.getColumn": 1, "Table.getString": 1, "Table.open": 1, "Table.rename": 1, "Table.renameColumn": 1, "Table.reset": 1, "Table.save": 1, "Table.saveColumnHeader": 1, "Table.set": 1, "Table.setColumn": 1, "Table.setLocationAndSize": 1, "Table.setSelection": 1, "Table.showArrays": 1, "Table.showRowIndexes": 1, "Table.showRowNumbers": 1, "Table.sort": 1, "abs": 1, "acos": 1, "asin": 1, "atan": 1, "atan2": 1, "autoUpdate": 1, "beep": 1, "bitDepth": 1, "calibrate": 1, "call": 1, "changeValues": 1, "charCodeAt": 1, "close": 1, "contains": 1, "cos": 1, "d2s": 1, "debug": 1, "doCommand": 1, "doWand": 1, "drawLine": 1, "drawOval": 1, "drawRect": 1, "drawString": 1, "dump": 1, "endsWith": 1, "eval": 1, "exec": 1, "exit": 1, "exp": 1, "fill": 1, "fillOval": 1, "fillRect": 1, "floodFill": 1, "floor": 1, "fromCharCode": 1, "getArgument": 1, "getBoolean": 1, "getBoundingRect": 1, "getCursorLoc": 1, "getDateAndTime": 1, "getDimensions": 1, "getDir": 1, "getDirectory": 1, "getDisplayedArea": 1, "getFileList": 1, "getFontList": 1, "getHeight": 1, "getHistogram": 1, "getImageID": 1, "getImageInfo": 1, "getInfo": 1, "getLine": 1, "getList": 1, "getLocationAndSize": 1, "getLut": 1, "getMetadata": 1, "getMinAndMax": 1, "getNumber": 1, "getPixel": 1, "getPixelSize": 1, "getProfile": 1, "getRawStatistics": 1, "getResult": 1, "getResultLabel": 1, "getResultString": 1, "getSelectionBounds": 1, "getSelectionCoordinates": 1, "getSliceNumber": 1, "getStatistics": 1, "getString": 1, "getStringWidth": 1, "getThreshold": 1, "getTime": 1, "getTitle": 1, "getValue": 1, "getVersion": 1, "getVoxelSize": 1, "getWidth": 1, "getZoom": 1, "imageCalculator": 1, "indexOf": 1, "is": 1, "isActive": 1, "isKeyDown": 1, "isNaN": 1, "isOpen": 1, "lastIndexOf": 1, "lengthOf": 1, "lineTo": 1, "log": 1, "makeArrow": 1, "makeEllipse": 1, "makeLine": 1, "makeOval": 1, "makePoint": 1, "makePolygon": 1, "makeRectangle": 1, "makeRotatedRectangle": 1, "makeSelection": 1, "makeText": 1, "matches": 1, "maxOf": 1, "minOf": 1, "moveTo": 1, "newArray": 1, "newImage": 1, "newMenu": 1, "open": 1, "parseFloat": 1, "parseInt": 1, "pow": 1, "print": 1, "random": 1, "rename": 1, "replace": 1, "requires": 1, "roiManager": 1, "round": 1, "run": 1, "runMacro": 1, "save": 1, "saveAs": 1, "saveSettings": 1, "selectImage": 1, "selectWindow": 1, "selectionContains": 1, "setAutoThreshold": 1, "setBackgroundColor": 1, "setBatchMode": 1, "setColor": 1, "setFont": 1, "setForegroundColor": 1, "setJustification": 1, "setKeyDown": 1, "setLineWidth": 1, "setLocation": 1, "setLut": 1, "setMetadata": 1, "setMinAndMax": 1, "setOption": 1, "setPasteMode": 1, "setPixel": 1, "setRGBWeights": 1, "setResult": 1, "setSelectionLocation": 1, "setSelectionName": 1, "setSlice": 1, "setThreshold": 1, "setTool": 1, "setVoxelSize": 1, "setZCoordinate": 1, "setupUndo": 1, "showMessage": 1, "showMessageWithCancel": 1, "showProgress": 1, "showStatus": 1, "showText": 1, "sin": 1, "snapshot": 1, "split": 1, "sqrt": 1, "startsWith": 1, "substring": 1, "tan": 1, "toBinary": 1, "toHex": 1, "toLowerCase": 1, "toScaled": 1, "toString": 1, "toUnscaled": 1, "toUpperCase": 1, "updateDisplay": 1, "updateResults": 1, "wait": 1, "waitForUser": 1 };
+
+/* replace: 1文字なら文字どおり、2文字以上なら正規表現（ij.macro.Functions.replace） */
+function simReplaceStr(s, oldS, newS){
+  if (typeof s !== "string") return SIM_UNK;
+  var o = String(oldS), n = String(newS);
+  if (o.length === 1) return s.split(o).join(n);
+  try { return s.replace(new RegExp(o, "g"), n); }
+  catch (ex) { return SIM_UNK; }
+}
+/* ImageJ の数値文字列パース（Tools.parseDouble）: 全体が数値でなければ NaN */
+function simParseDouble(v){
+  if (typeof v === "number") return v;
+  if (typeof v !== "string") return NaN;
+  var s = v.trim();
+  if (s === "NaN") return NaN;
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)) return NaN;
+  return Number(s);
+}
+/* split: ","/";" は空要素を残す正規表現分割、それ以外は区切り文字集合で空要素を捨てる（Functions.split / Tools.split） */
+function simSplitStr(s, delim, line){
+  if (typeof s !== "string") return SIM_UNK;
+  if (typeof delim === "string" && (delim === "," || delim === ";")) return s.split(delim);
+  if (typeof delim === "string" && delim.length >= 3 && delim.charAt(0) === "(" && delim.charAt(delim.length - 1) === ")"){
+    try { return s.split(new RegExp(delim.slice(1, -1))); } catch (ex) { return SIM_UNK; }
+  }
+  if (delim === "\n"){ var parts = s.split("\n"); if (parts.length && parts[parts.length - 1] === "") parts.pop(); return parts; }
+  var set = (typeof delim === "string" && delim !== "") ? delim : " \t\n\r";
+  return s.split("").reduce(function(acc, ch){
+    if (set.indexOf(ch) >= 0){ acc.push(""); } else { acc[acc.length - 1] += ch; }
+    return acc;
+  }, [""]).filter(function(x){ return x !== ""; });
+}
 function simHist256(img){
   var hist = new Array(256).fill(0);
   if (!img.buckets) return null;
@@ -1630,7 +1892,7 @@ function simBuiltin(S, e, args, refs, H){
   }
   switch (name){
     case "print": case "log": {
-      var txt = args.map(function(a){ return simFmt(a); }).join("");
+      var txt = args.map(function(a){ return simFmt(a); }).join(" ");
       if (S.log.length < 200) S.log.push(txt);
       else if (S.log.length === 200) S.log.push("（Log 出力が200行を超えたため、以降は省略します）");
       step(line, "Log に「" + txt + "」と出力します");
@@ -1707,13 +1969,18 @@ function simBuiltin(S, e, args, refs, H){
     }
     case "Array.sort": {
       var ar = args[0];
+      /* 文字列は大文字小文字を区別しない順序（String.CASE_INSENSITIVE_ORDER） */
+      function cmpIJ(x, y){
+        if (typeof x === "string" && typeof y === "string"){ var a = x.toLowerCase(), b = y.toLowerCase(); return a < b ? -1 : a > b ? 1 : 0; }
+        return x < y ? -1 : x > y ? 1 : 0;
+      }
       if (Array.isArray(ar)){
         if (Array.isArray(args[1]) && args[1].length === ar.length){
           var pairs = ar.map(function(v, i){ return [v, args[1][i]]; });
-          pairs.sort(function(p, q){ return p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0; });
+          pairs.sort(function(p, q){ return cmpIJ(p[0], q[0]); });
           pairs.forEach(function(p, i){ ar[i] = p[0]; args[1][i] = p[1]; });
           step(line, "配列を小さい順に並べ替え、2つ目の配列も同じ順序で並べ替えます");
-        } else { ar.sort(function(x, y){ return x < y ? -1 : x > y ? 1 : 0; }); step(line, "配列を小さい順に並べ替えます"); }
+        } else { ar.sort(cmpIJ); step(line, "配列を小さい順に並べ替えます"); }
       }
       return ar;
     }
@@ -1722,7 +1989,8 @@ function simBuiltin(S, e, args, refs, H){
       if (!Array.isArray(ga) || !ga.length || ga.some(function(x){ return typeof x !== "number"; })){ step(line, "Array.getStatistics：数値の配列ではないため、統計は計算できません"); return SIM_UNK; }
       var gmn = Math.min.apply(null, ga), gmx = Math.max.apply(null, ga);
       var gsum = ga.reduce(function(a, b){ return a + b; }, 0), gmean = gsum / ga.length;
-      var gvar = ga.reduce(function(a, b){ return a + (b - gmean) * (b - gmean); }, 0) / ga.length, gsd = Math.sqrt(gvar);
+      var gsum2 = ga.reduce(function(a, b){ return a + b * b; }, 0);
+      var gsd = Math.sqrt(((ga.length * gsum2 - gsum * gsum) / ga.length) / (ga.length - 1.0));
       if (refs[1]) writeRef(S, refs[1], gmn);
       if (refs[2]) writeRef(S, refs[2], gmx);
       if (refs[3]) writeRef(S, refs[3], gmean);
@@ -1731,6 +1999,10 @@ function simBuiltin(S, e, args, refs, H){
       return SIM_UNK;
     }
     case "lengthOf": return typeof args[0] === "string" || Array.isArray(args[0]) ? args[0].length : SIM_UNK;
+    case "toLowerCase": return typeof args[0] === "string" ? args[0].toLowerCase() : SIM_UNK;
+    case "toUpperCase": return typeof args[0] === "string" ? args[0].toUpperCase() : SIM_UNK;
+    case "charCodeAt": return typeof args[0] === "string" && typeof args[1] === "number" ? args[0].charCodeAt(args[1]) : SIM_UNK;
+    case "fromCharCode": return typeof args[0] === "number" ? String.fromCharCode(args[0]) : SIM_UNK;
     case "indexOf": return typeof args[0] === "string" ? args[0].indexOf(String(args[1]), typeof args[2] === "number" ? args[2] : 0) : SIM_UNK;
     case "substring": {
       if (typeof args[0] !== "string") return SIM_UNK;
@@ -1741,12 +2013,8 @@ function simBuiltin(S, e, args, refs, H){
     }
     case "startsWith": return typeof args[0] === "string" && args[0].indexOf(String(args[1])) === 0 ? 1 : 0;
     case "endsWith": return typeof args[0] === "string" && args[0].slice(-String(args[1]).length) === String(args[1]) ? 1 : 0;
-    case "replace": return typeof args[0] === "string" ? args[0].split(String(args[1])).join(String(args[2])) : SIM_UNK;
-    case "split": {
-      if (typeof args[0] !== "string") return SIM_UNK;
-      var dl = String(args[1] || " ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&").split("").join("|");
-      return args[0].split(new RegExp(dl)).filter(function(s){ return s.trim() !== ""; }).map(function(s){ return s.trim(); });
-    }
+    case "replace": return simReplaceStr(args[0], args[1], args[2]);
+    case "split": return simSplitStr(args[0], args.length > 1 ? args[1] : undefined, line);
     case "parseInt": {
       if (typeof args[0] !== "string" && typeof args[0] !== "number") return SIM_UNK;
       var ps = String(args[0]), radix = typeof args[1] === "number" ? args[1] : 10;
@@ -1754,10 +2022,10 @@ function simBuiltin(S, e, args, refs, H){
         var pn = parseInt(ps, radix);
         return isNaN(pn) ? NaN : pn;
       }
-      var pd = parseFloat(ps);
+      var pd = simParseDouble(ps);
       return isNaN(pd) ? NaN : Math.round(pd);
     }
-    case "parseFloat": { var pf = parseFloat(args[0]); return isNaN(pf) ? SIM_UNK : pf; }
+    case "parseFloat": return simParseDouble(args[0]);
     case "d2s": return typeof args[0] === "number" ? args[0].toFixed(Math.min(10, Math.max(0, args[1] || 0))) : SIM_UNK;
     case "abs": return typeof args[0] === "number" ? Math.abs(args[0]) : SIM_UNK;
     case "floor": return typeof args[0] === "number" ? Math.floor(args[0]) : SIM_UNK;
@@ -1825,17 +2093,33 @@ function simBuiltin(S, e, args, refs, H){
     }
     case "setAutoThreshold": {
       var im7 = needImg("setAutoThreshold");
-      var method = String(args[0] || "Default"), dark = /dark/i.test(method) || args.some(function(x){ return typeof x === "string" && /dark/i.test(x); });
+      if (!args.length || args[0] === undefined || simIsUnk(args[0])){
+        /* 引数なしは旧方式 ISODATA2：閾値だけでなく前景の側も自動で選ばれる */
+        var r02 = simIsodata2(im7);
+        if (!r02){ step(line, "自動閾値（引数なし＝旧方式）で閾値を決めます（値は画像依存です）"); im7.thr = null; return SIM_UNK; }
+        im7.thr = [r02.lo, r02.hi];
+        var pct0 = simImgPct(im7, r02.lo, r02.hi);
+        step(line, "引数なしの自動閾値（旧方式）で " + r02.lo + "〜" + r02.hi + " が前景に選ばれます" + (r02.lo === r02.t ? "（暗い背景に明るい対象がある画像として、閾値より明るい側が前景です）" : "（明るい背景に暗い対象がある画像として、閾値以下の側が前景です）") + (simIsUnk(pct0) ? "" : "。モデルでは前景は全体の約 " + Math.round(pct0) + "%") + "。実際の画像では値は前後します");
+        return SIM_UNK;
+      }
+      var method = String(args[0]), dark = /dark/i.test(method) || args.some(function(x){ return typeof x === "string" && /dark/i.test(x); });
       var mName = method.trim().split(/\s+/)[0];
       if (mName === "MinError(I)") mName = "MinError";
       var METHODS = ["Default", "Huang", "Intermodes", "IsoData", "IJ_IsoData", "Li", "MaxEntropy", "Mean", "MinError", "Minimum", "Moments", "Otsu", "Percentile", "RenyiEntropy", "Shanbhag", "Triangle", "Yen"];
       if (METHODS.indexOf(mName) < 0) throw simErr(line, "しきい値の手法「" + mName + "」は存在しません", "使える手法は Default / Otsu / IsoData / IJ_IsoData / Huang / Triangle など17種類です。ImageJ ではここでエラーになり止まります。");
-      var isoFam = mName === "IsoData" || mName === "IJ_IsoData" || mName === "Default";
-      var t = isoFam ? simIsoData(im7) : simOtsu(im7);
+      var h7 = simHistNorm(im7);
+      var t = mName === "Default" ? (h7 ? ijDefaultHist(h7) : SIM_UNK)
+        : mName === "IJ_IsoData" ? (h7 ? ijIsoDataHist(h7) : SIM_UNK)
+        : mName === "IsoData" ? (h7 ? ijRidlerHist(h7) : SIM_UNK)
+        : simOtsu(im7);
       if (simIsUnk(t)){ step(line, "自動閾値（" + method + "）で閾値を決めます（値は画像依存です）"); im7.thr = null; return SIM_UNK; }
-      im7.thr = dark ? [t + 1, 255] : [0, t];
+      /* ヒストグラム法（Default / IJ_IsoData / IsoData）の t は 256 階調の単位なので、16/32bit では実値域へ戻す */
+      if (im7.bit !== 8 && h7 && ["Default", "IJ_IsoData", "IsoData"].indexOf(mName) >= 0){ var rg7 = simImgRange(im7); if (rg7) t = Math.round(rg7[0] + t / 256 * (rg7[1] - rg7[0] + 1)); }
+      var topV = Math.pow(2, im7.bit) - 1;
+      im7.thr = dark ? [t + 1, topV] : [0, t];
       var pct2 = simImgPct(im7, im7.thr[0], im7.thr[1]);
-      step(line, "自動閾値（" + method + "）で閾値 " + (dark ? (t + 1) + "〜255" : "0〜" + t) + " が選ばれます" + (simIsUnk(pct2) ? "" : "（モデルでは前景は全体の約 " + Math.round(pct2) + "%）") + (!isoFam && mName !== "Otsu" ? "。この手法の厳密な計算はモデルでは Otsu 法で近似しているため、実際の値とはずれます" : "。実際の画像では値は前後します"));
+      var exact = mName === "Default" || mName === "IJ_IsoData" || mName === "IsoData" || mName === "Otsu";
+      step(line, "自動閾値（" + method + "）で閾値 " + (dark ? (t + 1) + "〜" + topV : "0〜" + t) + " が選ばれます" + (simIsUnk(pct2) ? "" : "（モデルでは前景は全体の約 " + Math.round(pct2) + "%）") + (!exact ? "。この手法の厳密な計算はモデルでは Otsu 法で近似しているため、実際の値とはずれます" : "。実際の画像では値は前後します"));
       return SIM_UNK;
     }
     case "getThreshold": {
@@ -1955,13 +2239,21 @@ function simBuiltin(S, e, args, refs, H){
       return SIM_UNK;
     }
     case "getResult": {
-      var row = S.results[args[1]];
-      if (!row || row[args[0]] === undefined){ warn(line, "getResult で結果表にない値が指定されています", "行番号や列名を確認してください。モデルでは値を返せません。"); return SIM_UNK; }
-      step(line, "結果表の " + args[1] + " 行目「" + args[0] + "」= " + simFmt(row[args[0]]) + " を取得します");
+      var gri = args.length > 1 ? args[1] : null;
+      if (gri === null || gri === undefined) gri = S.results.length - 1;
+      if (typeof gri !== "number" || simIsUnk(gri)){ step(line, "結果表の値を取得します（行が実行時に決まるため、値は省略します）"); return SIM_UNK; }
+      gri = Math.floor(gri);
+      if (gri < 0 || gri >= S.results.length) throw simErr(line, "getResult の行（" + gri + "）が結果表の範囲外です", "結果表は現在 " + S.results.length + " 行です。ImageJ では \"Row (" + gri + ") out of range\" エラーになり止まります。");
+      var row = S.results[gri];
+      if (!row || row[args[0]] === undefined){ step(line, "結果表に列「" + args[0] + "」がないため、値は NaN になります"); return NaN; }
+      step(line, "結果表の " + gri + " 行目「" + args[0] + "」= " + simFmt(row[args[0]]) + " を取得します");
       return row[args[0]];
     }
     case "setResult": {
       var ri = args[1];
+      if (typeof ri !== "number" || simIsUnk(ri)){ step(line, "結果表への書き込みですが、行番号が実行時に決まるため、記録先の行は特定できません（書き込み自体は行われます）"); return SIM_UNK; }
+      ri = Math.floor(ri);
+      if (ri < 0) throw simErr(line, "setResult の行（" + ri + "）が不正です", "行番号は 0 以上で指定してください。ImageJ ではここでエラーになり止まります。");
       while (S.results.length <= ri) S.results.push({ Label: img() ? img().title : "" });
       S.results[ri][args[0]] = args[2];
       step(line, "結果表の " + ri + " 行目に「" + args[0] + "」= " + simFmt(args[2]) + " を書き込みます");
@@ -1980,7 +2272,10 @@ function simBuiltin(S, e, args, refs, H){
     return SIM_UNK;
   }
   if (name.indexOf("File.") === 0){ step(line, "ファイル操作（" + name + "）を行います（内容は実行環境に依存します）"); return SIM_UNK; }
-  if (!f0 && !Object.prototype.hasOwnProperty.call(SIM_EXTRA, name)) throw simErr(line, "「" + name + "」は定義されていない関数です", "関数リファレンスにも、このコード内の function 定義にもありません。綴り違いか、定義のし忘れの可能性があります。");
+  if (!f0 && !Object.prototype.hasOwnProperty.call(SIM_EXTRA, name)){
+    if (Object.prototype.hasOwnProperty.call(SIM_OFFICIAL, name)){ step(line, name + " を実行します（ImageJ に実在する関数ですが、このシミュレーションでは動きの説明を省略します）"); return SIM_UNK; }
+    throw simErr(line, "「" + name + "」は定義されていない関数です", "関数リファレンスにも、このコード内の function 定義にもありません。綴り違いか、定義のし忘れの可能性があります。");
+  }
   descStep();
   return SIM_UNK;
 }
@@ -2057,30 +2352,45 @@ function simRunCmd(S, cmdRaw, opt, line, H){
     case "8-bit": case "16-bit": case "32-bit": {
       var im = needImg("run(\"" + cmd + "\")"), target = parseInt(base, 10);
       if (im.bit === target){ step(line, "すでに " + target + " ビットなので、画素値は変わりません"); return SIM_UNK; }
-      if (target === 32){ im.bit = 32; step(line, "32 ビット（浮動小数）に変換します。画素値そのものは変わらず（8ビットなら 0〜255 のまま）、実数として扱われます"); return SIM_UNK; }
-      var from = Math.pow(2, im.bit) - 1, to = Math.pow(2, target) - 1;
-      if (im.bit === 32 && im.buckets){
-        var rgr = simImgRangeNow(im), span = (rgr[1] - rgr[0]) || 1;
-        im.buckets = im.buckets.map(function(b){ return [Math.round((b[0] - rgr[0]) / span * to), Math.round((b[1] - rgr[0]) / span * to), b[2]]; });
+      var oldBit = im.bit;
+      if (target === 32){ im.bit = 32; step(line, "32 ビット（浮動小数）に変換します。画素値はそのまま（" + (oldBit === 8 ? "0〜255 のまま" : "値の範囲は変わらず") + "）実数として扱われます"); return SIM_UNK; }
+      if (oldBit === 8 && target === 16){
+        /* TypeConverter.convertByteToShort は値をそのまま保持する（拡大しない） */
+        im.bit = 16;
+        step(line, "16 ビットに変換します。画素値は 0〜255 のまま保持されます（257 倍に広がることはありません）。より細かい階調が使えるようになるのは、この後に計算や描画で新しい値が生まれてからです");
+        return SIM_UNK;
       }
-      else if (im.buckets) im.buckets = im.buckets.map(function(b){ return [Math.round(b[0] / from * to), Math.round(b[1] / from * to), b[2]]; });
+      /* 16→8 / 32→8 / 32→16 は、現在の実際の値域を新しい範囲へ換算する（doScaling） */
+      var to = Math.pow(2, target) - 1, cMin = 0, cMax = to;
+      if (im.buckets){
+        var rgr = simImgRangeNow(im); cMin = rgr[0]; cMax = rgr[1];
+        if (rgr[1] > rgr[0]){
+          var scale = (to + 1) / (rgr[1] - rgr[0] + 1);
+          im.buckets = im.buckets.map(function(b){
+            return [Math.max(0, Math.min(to, Math.round((b[0] - rgr[0]) * scale))), Math.max(0, Math.min(to, Math.round((b[1] - rgr[0]) * scale))), b[2]];
+          });
+        } else {
+          im.buckets = im.buckets.map(function(b){ return [0, 0, b[2]]; });
+        }
+      }
       im.mapOps = [];
       im.bit = target;
-      step(line, target + " ビットに変換します。画素値は 0〜" + to + " の範囲に換算され、" + (target < 16 ? "階調は粗くなります" : "より細かい階調で表されます"));
+      step(line, target + " ビットに変換します。現在の値の範囲（" + cMin + "〜" + cMax + "）が 0〜" + to + " に換算されます" + (target === 8 ? "。階調は粗くなり、元には戻せません" : ""));
       return SIM_UNK;
     }
     case "RGB Color": { var im2 = needImg("run"); step(line, "RGB カラーに変換します（表示・保存用）。解析の測定は通常、グレースケールのまま行います"); im2.kind = "RGB"; return SIM_UNK; }
     case "Convert to Mask": case "Make Binary": {
       var im3 = needImg("run(\"" + cmd + "\")");
       if (!im3.thr){
-        if (im3.bit === 8 && im3.buckets){ var isoT = simIsoData(im3); im3.thr = [isoT, 255]; step(line, "閾値が未設定のため、ImageJ の自動閾値（IsoData 法）で決まります。モデル画像では閾値は " + isoT + " で、" + isoT + "〜255 を前景として計算します"); }
+        var r03 = simIsodata2(im3);
+        if (r03){ im3.thr = [r03.lo, r03.hi]; step(line, "閾値が未設定のため、ImageJ の自動閾値（旧方式）で決まります。モデル画像では " + r03.lo + "〜" + r03.hi + " を前景として計算します"); }
         else { im3.thr = [0, 127]; step(line, "閾値が未設定のため、ImageJ が自動で決めた閾値を使います（モデルでは簡易に 0〜127 を前景として計算）"); }
       }
       var fg = simImgPct(im3, im3.thr[0], im3.thr[1]);
       var lo = im3.thr[0], hi = im3.thr[1];
       if (im3.buckets && !simIsUnk(fg)) im3.buckets = [[0, 0, Math.round((100 - fg) * 10) / 10], [255, 255, Math.round(fg * 10) / 10]];
       im3.mapOps.push({ f: function(v){ return v >= lo && v <= hi ? 255 : 0; } });
-      im3.kind = "2値（マスク）"; im3.thr = null;
+      im3.kind = "2値（マスク）"; im3.thr = null; im3.bit = 8;
       step(line, "二値化します。閾値 " + lo + "〜" + hi + " の画素は 255（白）、それ以外はすべて 0（黒）になります" + (simIsUnk(fg) ? "" : "（モデルでは白が全体の約 " + Math.round(fg) + "%）") + "。中間の灰色は消えます");
       return SIM_UNK;
     }
@@ -2122,14 +2432,14 @@ function simRunCmd(S, cmdRaw, opt, line, H){
     case "Z Project": {
       var imH = needImg("run(\"Z Project\")");
       var proj = /projection=\[([^\]]+)\]/.exec(opt), pn = proj ? proj[1] : "Max Intensity";
-      if (imH.slices <= 1){ step(line, "Z 投影（" + pn + "）ですが、スライスが1枚なので結果はほぼ元の画像と同じです"); return SIM_UNK; }
+      if (imH.slices <= 1 && imH.frames <= 1){ warn(line, "Z Project はスタック（複数スライス）が必要です", "ImageJ では \"Stack required\" エラーになり、投影は行われません。今の画像はスライスが1枚だけです。"); step(line, "Z 投影（" + pn + "）は実行されません（スタックが必要です）"); return SIM_UNK; }
       imH.slices = 1;
       step(line, "スタックを Z 方向に投影して1枚にします（" + pn + "）" + (pn.indexOf("Max") >= 0 ? "。各画素で最も明るいスライスの値が残り、焦点の合った信号を拾いやすい反面、ノイズの最大値も拾います" : pn.indexOf("Sum") >= 0 ? "。各画素でスライスの合計になり、全体に明るくなります" : "。各画素でスライスの平均を取ります"));
       return SIM_UNK;
     }
     case "Split Channels": {
       var imI = needImg("run(\"Split Channels\")");
-      if (imI.channels <= 1){ step(line, "チャンネル分割ですが、この画像はチャンネルが1つなので分割されません（実際の複合画像ではチャンネルごとの画像に分かれます）"); return SIM_UNK; }
+      if (imI.channels <= 1){ warn(line, "Split Channels は複合画像（複数チャンネル）が必要です", "ImageJ では \"Multichannel image required\" エラーになり、分割は行われません。今の画像はチャンネルが1つだけです。"); step(line, "チャンネル分割は実行されません（複合画像が必要です）"); return SIM_UNK; }
       var parts = [];
       for (var ci = 0; ci < imI.channels; ci++){ var cp = Object.assign({}, imI, { title: "C" + (ci + 1) + "-" + imI.title, channels: 1, pix: {}, buckets: imI.buckets ? imI.buckets.slice() : null, mapOps: imI.mapOps.slice() }); parts.push(cp); }
       S.images.splice.apply(S.images, [S.active, 1].concat(parts)); S.active = S.active;
@@ -2190,14 +2500,43 @@ function simRunCmd(S, cmdRaw, opt, line, H){
     case "Fill": step(line, "現在の ROI の中を前景色で塗りつぶします"); return SIM_UNK;
     case "Clear": step(line, "現在の ROI の中を背景色で消去します"); return SIM_UNK;
     case "Grays": case "Fire": case "Ice": case "Spectrum": step(line, "表示 LUT を「" + base + "」に変えます（見た目だけの変更で、画素値は変わりません）"); return SIM_UNK;
-    case "Add": return mathOp(base, function(v){ return v + (optNum("value") || 0); }, "全画素に " + (optNum("value") || 0) + " を足します。255 を超えた分は 255 で止まります（8ビットの場合）");
-    case "Subtract": return mathOp(base, function(v){ return v - (optNum("value") || 0); }, "全画素から " + (optNum("value") || 0) + " を引きます。0 未満は 0 で止まります");
+    case "Add": { var adv = Math.trunc(optNum("value") || 0); return mathOp(base, function(v){ return v + adv; }, "全画素に " + adv + " を足します。255 を超えた分は 255 で止まります（8ビットの場合）"); }
+    case "Subtract": { var sbv = Math.trunc(optNum("value") || 0); return mathOp(base, function(v){ return v - sbv; }, "全画素から " + sbv + " を引きます。0 未満は 0 で止まります"); }
     case "Multiply": { var mlv = optNum("value"); if (mlv === null) mlv = 1; return mathOp(base, function(v){ return v * mlv; }, "全画素に " + mlv + " を掛けます。明るさ全体が比例して変わります"); }
-    case "Divide": { var dvv = optNum("value"); if (dvv === null) dvv = 1; return mathOp(base, function(v){ return v / dvv; }, "全画素を " + dvv + " で割ります"); }
-    case "Gamma": { var gv = optNum("value") || 1; if (gv < 0.05 || gv > 5) warn(line, "Gamma の値 " + gv + " は公式ダイアログの範囲（0.05〜5.0）外です", "ImageJ の Gamma ダイアログではこの範囲外の値は指定できません。"); return mathOp(base, function(v){ return 255 * Math.pow(Math.max(0, v) / 255, gv); }, "ガンマ補正（値 " + gv + "）をかけます。中間の明るさが" + (gv < 1 ? "持ち上がり" : "沈み") + "、黒と白の端はほぼ変わりません"); }
-    case "Min": { var mnv = optNum("value"); if (mnv === null) mnv = 0; return mathOp(base, function(v){ return Math.max(v, mnv); }, "画素値の下限を " + mnv + " にします。" + mnv + " より暗い画素はすべて " + mnv + " まで持ち上がります（Min は「最小値をこの値にする」という意味です）"); }
-    case "Max": { var mxu = optNum("value"); if (mxu === null) mxu = 0; return mathOp(base, function(v){ return Math.min(v, mxu); }, "画素値の上限を " + mxu + " にします。" + mxu + " より明るい画素はすべて " + mxu + " まで下がります（Max は「最大値をこの値にする」という意味です）"); }
-    case "AND": case "OR": case "XOR": step(line, "画素値にビット演算（" + base + "）を行います"); return SIM_UNK;
+    case "Divide": {
+      var dvv = optNum("value"); if (dvv === null) dvv = 1;
+      if (dvv === 0){
+        var imdv = needImg("run(\"Divide\")");
+        if (imdv.bit !== 32){ step(line, "0 で割る指定です。ImageJ では 8/16 ビット画像では何も実行されず、画素値は変わりません"); return SIM_UNK; }
+        imdv.buckets = null; imdv.mapOps = [];
+        step(line, "0 で割る指定です。32 ビットでは 0 でない画素は Infinity、0 の画素は NaN になります（以降の画素値の計算はモデルでは追えません）");
+        return SIM_UNK;
+      }
+      return mathOp(base, function(v){ return v / dvv; }, "全画素を " + dvv + " で割ります");
+    }
+    case "Gamma": {
+      var gv = optNum("value"); if (gv === null) gv = 1;
+      if (gv < 0.05 || gv > 5){ step(line, "Gamma の値 " + gv + " は範囲（0.05〜5.0）外のため、ダイアログがキャンセルされ、画像は変わりません"); return SIM_UNK; }
+      return mathOp(base, function(v){ return 255 * Math.pow(Math.max(0, v) / 255, gv); }, "ガンマ補正（値 " + gv + "）をかけます。中間の明るさが" + (gv < 1 ? "持ち上がり" : "沈み") + "、黒と白の端はほぼ変わりません");
+    }
+    case "Min": { var mnv = optNum("value"); if (mnv === null) mnv = 0; mnv = Math.trunc(mnv); return mathOp(base, function(v){ return Math.max(v, mnv); }, "画素値の下限を " + mnv + " にします。" + mnv + " より暗い画素はすべて " + mnv + " まで持ち上がります（Min は「最小値をこの値にする」という意味です）"); }
+    case "Max": { var mxu = optNum("value"); if (mxu === null) mxu = 0; mxu = Math.trunc(mxu); return mathOp(base, function(v){ return Math.min(v, mxu); }, "画素値の上限を " + mxu + " にします。" + mxu + " より明るい画素はすべて " + mxu + " まで下がります（Max は「最大値をこの値にする」という意味です）"); }
+    case "AND": case "OR": case "XOR": {
+      /* 値は2進数文字列として解釈される（ImageMath: Integer.parseInt(value, 2)） */
+      var bm = /value=([^\s]+)/i.exec(opt), braw = bm ? bm[1] : null;
+      if (braw === null || !/^[01]+$/.test(braw)){ step(line, base + " の値" + (braw ? "「" + braw + "」" : "") + "は2進数として読めないため、ImageJ ではエラー（Binary number required）になり実行されません"); return SIM_UNK; }
+      var bv2 = parseInt(braw, 2);
+      var bf = base === "AND" ? function(v){ return v & bv2; } : base === "OR" ? function(v){ return v | bv2; } : function(v){ return v ^ bv2; };
+      return mathOp(base, bf, "全画素にビット演算 " + base + "（2進数 " + braw + " ＝ 10進数 " + bv2 + "）を行います");
+    }
+    case "Set": { var stv = optNum("value"); if (stv === null) stv = 0; return mathOp(base, function(){ return stv; }, "全画素を " + stv + " に設定します"); }
+    case "Reciprocal": {
+      var imrc = needImg("run(\"Reciprocal\")");
+      if (imrc.bit !== 32){ step(line, "Reciprocal は 32 ビット画像専用のため、この画像ではキャンセルされ、何も変わりません"); return SIM_UNK; }
+      if (imrc.buckets && simImgPct(imrc, 0, 0) > 0){ imrc.buckets = null; imrc.mapOps = []; step(line, "逆数を取ります。0 の画素は NaN になります（以降の画素値の計算はモデルでは追えません）"); return SIM_UNK; }
+      return mathOp(base, function(v){ return v === 0 ? NaN : 1 / v; }, "各画素の逆数（1÷値）を取ります");
+    }
+    case "Macro": step(line, "指定したマクロ式を全画素に適用します（式の内容はモデルでは追えません）"); return SIM_UNK;
     case "Log": return mathOp(base, function(v){ return v > 0 ? Math.log(v) * (255 / Math.log(255)) : 0; }, "画素値に対数変換をかけます。暗い部分の差が広がり、最大値は最大値のままです");
     case "Exp": return mathOp(base, function(v){ return Math.exp(v / (255 / Math.log(255))); }, "画素値に指数変換をかけます。明るい部分の差が広がります");
     case "Square": return mathOp(base, function(v){ return v * v; }, "画素値を2乗します（8ビットでは16以上の画素がすべて255になります）");
