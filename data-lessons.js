@@ -55,7 +55,7 @@ window.IJDATA2.lessons = [
   sections:[
    {h:"概念",b:["ヒストグラムは横軸がグレー値、縦軸がその値を持つピクセル数です。画像全体の明暗の偏りや、値の広がりを一目で把握できます。"],fig:"histogram",figParam:{distribution:"単峰の山型分布の模式",stats:["Count","Mean","StdDev","Mode","Min","Max"],bins:256,note:"横軸=グレー値、縦軸=その値を持つピクセル数。統計量の表示位置を併記する"}},
    {h:"読み方：表示される統計量",b:["あわせて総ピクセル数（Count）と平均（Mean）、標準偏差（StdDev）、最頻値（Mode）、最小・最大が表示されます。カーソル位置の Value と Count も読み取れます。"],fig:null},
-   {h:"ImageJでの意味",b:["RGB画像のヒストグラムは、各ピクセルを gray=0.299×赤＋0.587×緑＋0.114×青（設定により単純平均の場合もある）の輝度に変換して計算されます。16-bit画像では最小〜最大の範囲を256ビンに分けて集計します。"],fig:null}
+   {h:"ImageJでの意味",b:["RGB画像のヒストグラムは、各ピクセルを輝度に変換して計算されます。既定では3チャンネルの単純平均（重みは各1/3）で、Edit > Options > Conversions で「Weighted RGB Conversion」を有効にした場合に限り gray=0.299×赤＋0.587×緑＋0.114×青 の重み付き変換になります。16-bit画像では最小〜最大の範囲を256ビンに分けて集計します。"],fig:null}
   ],
   points:["Count/Mean/StdDev/Mode/Min/Maxが読める","RGBは輝度に変換して集計する","16-bitは256ビンに分けて集計する"],
   mistakes:["Mode（最頻値）を平均値だと思ってしまう","ヒストグラムの見え方を変えたら画素値も変わったと思ってしまう（表示と値の関係はレッスンL24）"],
@@ -135,10 +135,10 @@ window.IJDATA2.lessons = [
  {id:"L10",cat:"thresh",title:"二値化：Make Binary と Convert to Mask",lead:"閾値で分けた結果を白黒2値の画像（マスク）に変える2つのコマンドの違いを押さえます。",
   sections:[
    {h:"概念",b:["二値化は、グレースケール画像を対象と背景の2値からなる画像（マスク）へ変換する処理です。変換の実行をもって、ピクセル値が実際に書き換わります。"],fig:null},
-   {h:"2つのコマンドの違い",b:["Process > Binary > Make Binary は、現在の選択（なければ画像全体）のヒストグラムを解析して閾値レベルを決め、白黒画像へ変換します。Thresholdツールがアクティブな場合は、その指定を反映するダイアログが出ます。スタックでは、表示中スライスで計算した閾値で全スライスが変換されます。","Process > Binary > Convert to Mask は、現在の閾値設定に基づいて白黒へ変換します。デフォルトでは反転LUTのマスク（黒が255、白が0）になりますが、Process > Binary > Options で Black Background にチェックがあると黒背景（0）のマスクを作ります。"],fig:null},
+   {h:"2つのコマンドの違い",b:["Process > Binary > Make Binary は、画像に閾値が設定されていればその閾値を使い、未設定なら現在の選択（なければ画像全体）のヒストグラムを解析して閾値を決め、白黒画像へ変換します。Thresholdツールがアクティブな場合は、その指定を反映するダイアログが出ます。スタックでは、表示中スライスで計算した閾値で全スライスが変換されます。","Process > Binary > Convert to Mask も、閾値の扱いは Make Binary と共通です（設定済みならその閾値、未設定なら自動決定）。違いは主に結果の形式で、こちらはマスク（0と255）への変換として扱われます。デフォルトでは反転LUTのマスク（黒が255、白が0）になりますが、Process > Binary > Options で Black Background にチェックがあると黒背景（0）のマスクを作ります。"],fig:null},
    {h:"注意",b:["二値画像の解釈そのものが Black Background の設定に依存します。前提が食い違うと対象と背景が反転して解釈されるので、粒子解析の前に必ず確認しましょう。"],fig:null}
   ],
-  points:["Make Binaryはヒストグラムから閾値を決める","Convert to Maskは現在の閾値設定を使う","Black Backgroundが二値の解釈を決める"],
+  points:["閾値の決め方は両コマンドで共通（設定済みならその閾値、未設定なら自動決定）","違いは主に結果の形式（マスクとして扱うかどうか）","Black Backgroundが二値の解釈を決める"],
   mistakes:["Make BinaryとConvert to Maskを同じだと思い、意図しない閾値で変換してしまう","Black Backgroundの前提が食い違い、対象と背景を反転して数えてしまう"],
   related:["L09","L16","L26"],terms:["Make Binary","Convert to Mask","Black Background","二値画像（バイナリ）"],src:"bin"},
  {id:"L11",cat:"filter",title:"フィルタ：Gaussian Blur、Median、Unsharp Mask",lead:"Process > Filters の代表的な3フィルタ。目的は「ぼかす」「ノイズを取る」「エッジを立てる」で明確に分かれます。",
@@ -153,7 +153,7 @@ window.IJDATA2.lessons = [
  {id:"L13",cat:"filter",title:"画像演算：Math と Image Calculator",lead:"「定数を足す」のが Process > Math、「画像同士を計算する」のが Process > Image Calculator です。",
   sections:[
    {h:"Math：定数との演算",b:["Process > Math の各コマンドは、アクティブ画像（または選択）の各ピクセルに定数を加える・引く・掛ける・割るなどの演算をします。8-bit画像では結果が255を超えると255に、0未満は0に丸められます。"],fig:null},
-   {h:"Gamma補正",b:["Gamma は 0.1〜5.0 の範囲で、8-bit画像では f(p)=(p/255)^gamma×255 を適用します（RGBでは各チャンネルに適用）。16-bit画像では255の代わりに画像の最小値・最大値でスケーリングします。"],fig:"gamma",figParam:{curves:[{gamma:0.5},{gamma:1.0,label:"直線（変化なし）"},{gamma:2.0}],formula:"f(p)=(p/255)^γ×255（8-bit画像の場合）",axes:{x:"入力値 0〜255",y:"出力値 0〜255"}}},
+   {h:"Gamma補正",b:["Gamma は 0.05〜5.0 の範囲で、8-bit画像では f(p)=(p/255)^gamma×255 を適用します（RGBでは各チャンネルに適用）。16-bit画像では255の代わりに画像の最小値・最大値でスケーリングします。"],fig:"gamma",figParam:{curves:[{gamma:0.5},{gamma:1.0,label:"直線（変化なし）"},{gamma:2.0}],formula:"f(p)=(p/255)^γ×255（8-bit画像の場合）",axes:{x:"入力値 0〜255",y:"出力値 0〜255"}}},
    {h:"Image Calculator：2画像間の演算",b:["Process > Image Calculator は、ポップアップで選んだ2枚の画像の間で算術・論理演算を行います。演算子は Add、Subtract、Multiply、Divide、AND、OR、XOR、Min、Max、Average、Difference、Copy などです。「32-bit Result」にチェックすると、演算前に32-bit浮動小数へ変換されます。"],fig:null},
    {h:"注意：ゼロ除算と丸め",b:["32-bitでのゼロ除算の結果は、標準設定では Infinity、0÷0 は NaN になります。背景差し引き（原画像 − ぼかした背景画像）やマスクの AND 結合など、実務の組み立てはこの2コマンドの組み合わせが基本です。"],fig:null}
   ],
