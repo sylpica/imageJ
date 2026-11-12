@@ -995,7 +995,7 @@ function simParse(code){
 function simDemoImage(){
   return { title: "demo.tif", w: 512, h: 512, bit: 8, channels: 1, slices: 1, frames: 1,
     slice: 1, buckets: [[0, 29, 52], [30, 99, 13], [100, 149, 9], [150, 199, 11], [200, 255, 15]],
-    thr: null, pixOps: [], spatial: false, pix: {}, kind: "グレースケール" };
+    thr: null, mapOps: [], spatial: false, pix: {}, kind: "グレースケール" };
 }
 function simImgMean(img){
   if (!img.buckets) return SIM_UNK;
@@ -1013,13 +1013,18 @@ function simImgRange(img){
   return [img.buckets[0][0], img.buckets[img.buckets.length - 1][1]];
 }
 function simApplyOps(img, v){
-  for (var i = 0; i < img.pixOps.length; i++) v = img.pixOps[i].f(v);
+  for (var i = 0; i < img.mapOps.length; i++) v = img.mapOps[i].f(v);
   return v;
 }
-function simImgRangeNow(img){
-  var r = simImgRange(img); if (!r) return null;
-  var a = simApplyOps(img, r[0]), b = simApplyOps(img, r[1]);
-  return [Math.min(a, b), Math.max(a, b)];
+function simImgRangeNow(img){ return simImgRange(img); }
+/* 値変換を1つ適用：変化表用の合成列へ積み、分布（buckets）にも畳み込む */
+function simPushOp(img, f){
+  img.mapOps.push({ f: f });
+  if (!img.buckets) return;
+  img.buckets = img.buckets.map(function(b){
+    var a = f(b[0]), c = f(b[1]);
+    return [Math.min(a, c), Math.max(a, c), b[2]];
+  }).sort(function(x, y){ return x[0] - y[0]; });
 }
 /* 画素値 lo..hi が全体に占める割合（%）。現在の値変換をサンプル点で近似する */
 function simImgPct(img, lo, hi){
@@ -1029,8 +1034,7 @@ function simImgPct(img, lo, hi){
     var hit = 0;
     for (var i = 0; i < steps; i++){
       var v = b[0] + (b[1] - b[0]) * (i + 0.5) / steps;
-      var w = simApplyOps(img, v);
-      if (w >= lo && w <= hi) hit++;
+      if (v >= lo && v <= hi) hit++;
     }
     inside += b[2] * hit / steps;
   });
@@ -1056,7 +1060,7 @@ function simOtsu(img){
   return thr;
 }
 /* --- 静的チェック（未知の関数・引数の数・関数の重複など） --- */
-var SIM_ARITY_OVERRIDE = { run: { min: 1, max: 2 }, print: { min: 1, max: Infinity }, log: { min: 1, max: Infinity } };
+var SIM_ARITY_OVERRIDE = { run: { min: 1, max: 2 }, print: { min: 1, max: Infinity }, log: { min: 1, max: Infinity }, newArray: { min: 0, max: Infinity }, exit: { min: 0, max: 1 }, getStatistics: { min: 1, max: 6 }, showMessage: { min: 1, max: 2 }, waitForUser: { min: 0, max: 2 }, call: { min: 1, max: Infinity } };
 function simArity(sig){
   var m = /\(([\s\S]*)\)/.exec(sig); if (!m) return null;
   var inner = m[1].trim(); if (!inner) return { min: 0, max: 0 };
@@ -1417,7 +1421,7 @@ function simRunProgram(code){
     var rng = simImgRangeNow(im), mn = simImgMean(im);
     out.img = { title: im.title, w: im.w, h: im.h, bit: im.bit, channels: im.channels, slices: im.slices,
       thr: im.thr, mean: simIsUnk(mn) ? null : Math.round(mn * 10) / 10, range: rng, count: S.images.length, results: S.results.length };
-    if (im.bit === 8 && im.pixOps.length && !im.spatial){
+    if (im.bit === 8 && im.mapOps.length && !im.spatial){
       out.mapping = [0, 32, 64, 96, 128, 160, 192, 224, 255].map(function(v){ return [v, Math.round(Math.max(0, Math.min(255, simApplyOps(im, v))))]; });
     }
   } else out.img = { none: 1, results: S.results.length };
@@ -1478,11 +1482,6 @@ function simHist256(img){
     var per = b[2] / (b[1] - b[0] + 1);
     for (var v = b[0]; v <= b[1]; v++) hist[v] += per;
   });
-  if (img.pixOps.length){
-    var out = new Array(256).fill(0);
-    for (var i = 0; i < 256; i++){ if (!hist[i]) continue; var w = Math.round(Math.max(0, Math.min(255, simApplyOps(img, i)))); out[w] += hist[i]; }
-    return out;
-  }
   return hist;
 }
 function simStats(img){
@@ -1540,7 +1539,7 @@ function simBuiltin(S, e, args, refs, H){
     }
     case "open": {
       var path = String(args[0]), base = path.split(/[\\/]/).pop();
-      var nim = { title: base, w: null, h: null, bit: 8, channels: 1, slices: 1, frames: 1, slice: 1, buckets: null, thr: null, pixOps: [], spatial: false, pix: {}, kind: "開いた画像" };
+      var nim = { title: base, w: null, h: null, bit: 8, channels: 1, slices: 1, frames: 1, slice: 1, buckets: null, thr: null, mapOps: [], spatial: false, pix: {}, kind: "開いた画像" };
       S.images.push(nim); S.active = S.images.length - 1;
       step(line, "ファイル「" + base + "」を開きます（寸法や分布は実際のファイル依存のため、この先の数値は目安として扱います）");
       return SIM_UNK;
@@ -1670,6 +1669,8 @@ function simBuiltin(S, e, args, refs, H){
         var acc = 0; for (var bj = 0; bj < per; bj++) acc += hist ? hist[Math.floor(bi * per + bj)] || 0 : 0;
         counts.push(Math.round(acc / 100 * total)); values.push(Math.round(bi * per));
       }
+      var csum = counts.reduce(function(a, b){ return a + b; }, 0);
+      if (csum !== total && counts.length){ var mi = 0; counts.forEach(function(cv, i2){ if (cv > counts[mi]) mi = i2; }); counts[mi] += total - csum; }
       if (refs[0]) writeRef(S, refs[0], values);
       if (refs[1]) writeRef(S, refs[1], counts);
       step(line, "ヒストグラム（" + nBins + " 区間）を取得します。画素値ごとの画素数が分かります");
@@ -1741,7 +1742,7 @@ function simBuiltin(S, e, args, refs, H){
     }
     case "changeValues": {
       var imM = needImg("changeValues");
-      imM.pixOps.push({ f: function(v){ return v >= args[0] && v <= args[1] ? args[2] : v; } });
+      simPushOp(imM, function(v){ return v >= args[0] && v <= args[1] ? args[2] : v; });
       step(line, "画素値が " + simFmt(args[0]) + "〜" + simFmt(args[1]) + " の画素を、すべて " + simFmt(args[2]) + " に置き換えます");
       return SIM_UNK;
     }
@@ -1805,12 +1806,12 @@ function simResultRow(S, roi){
 
 /* --- run() コマンドの説明と効果 --- */
 function simFoldOps(img){
-  if (!img.buckets || !img.pixOps.length){ img.pixOps = []; return; }
+  if (!img.buckets || !img.mapOps.length){ img.mapOps = []; return; }
   img.buckets = img.buckets.map(function(b){
     var a = simApplyOps(img, b[0]), c = simApplyOps(img, b[1]);
     return [Math.min(a, c), Math.max(a, c), b[2]];
   }).sort(function(x, y){ return x[0] - y[0]; });
-  img.pixOps = [];
+  img.mapOps = [];
 }
 var SIM_CMD_KEYS = ["8-bit", "16-bit", "32-bit", "RGB Color", "Convert to Mask", "Make Binary", "Invert", "Measure", "Analyze Particles", "Watershed", "Gaussian Blur", "Median", "Mean", "Despeckle", "Sharpen", "Find Edges", "Remove Outliers", "Unsharp Mask", "Convolve", "Subtract Background", "Z Project", "Split Channels", "Merge Channels", "Duplicate", "Close All", "Close", "Crop", "Scale", "Rotate 90 Degrees Right", "Rotate 90 Degrees Left", "Flip Horizontally", "Flip Vertically", "Set Scale", "Set Measurements", "Scale Bar", "Enhance Contrast", "Apply LUT", "Threshold", "Erode", "Dilate", "Fill Holes", "Skeletonize", "Outline", "Distance Map", "Find Maxima", "Plot Profile", "Histogram", "FFT", "Bandpass Filter", "Select All", "Select None", "Restore Selection", "Create Selection", "Draw", "Fill", "Clear", "Grays", "Fire", "Ice", "Spectrum", "Add", "Subtract", "Multiply", "Divide", "Min", "Max", "AND", "OR", "XOR", "Gamma", "Log", "Exp", "Square", "Square Root", "Abs", "Stack to Images", "Images to Stack", "Line Width", "Properties", "Rotate", "Translate", "Canvas Size", "Enlarge", "Save", "Straighten", "Interpolate"];
 function simLev(a, b){
@@ -1831,7 +1832,7 @@ function simRunCmd(S, cmdRaw, opt, line, H){
   function optNum(key){ var m = new RegExp(key + "=([0-9.]+)").exec(opt); return m ? parseFloat(m[1]) : null; }
   function mathOp(label, f, desc){
     var im = needImg("run(\"" + cmd + "\")");
-    im.pixOps.push({ f: f });
+    simPushOp(im, f);
     step(line, desc);
     return SIM_UNK;
   }
@@ -1842,7 +1843,7 @@ function simRunCmd(S, cmdRaw, opt, line, H){
       if (target === 32){ im.bit = 32; im.buckets = null; step(line, "32 ビット（浮動小数）に変換します。画素値は 0.0〜1.0 のような実数で扱われ、分布のモデル計算はここまでとします"); return SIM_UNK; }
       var from = Math.pow(2, im.bit) - 1, to = Math.pow(2, target) - 1;
       if (im.buckets) im.buckets = im.buckets.map(function(b){ return [Math.round(b[0] / from * to), Math.round(b[1] / from * to), b[2]]; });
-      im.pixOps = im.pixOps.map(function(o){ return { f: function(v){ return o.f(v); } }; });
+      im.mapOps = [];
       im.bit = target;
       step(line, target + " ビットに変換します。画素値は 0〜" + to + " の範囲に換算され、" + (target < 16 ? "階調は粗くなります" : "より細かい階調で表されます"));
       return SIM_UNK;
@@ -1854,14 +1855,14 @@ function simRunCmd(S, cmdRaw, opt, line, H){
       var fg = simImgPct(im3, im3.thr[0], im3.thr[1]);
       var lo = im3.thr[0], hi = im3.thr[1];
       if (im3.buckets && !simIsUnk(fg)) im3.buckets = [[0, 0, Math.round((100 - fg) * 10) / 10], [255, 255, Math.round(fg * 10) / 10]];
-      im3.pixOps = [{ f: function(v){ return v >= lo && v <= hi ? 255 : 0; } }];
+      im3.mapOps.push({ f: function(v){ return v >= lo && v <= hi ? 255 : 0; } });
       im3.kind = "2値（マスク）"; im3.thr = null;
       step(line, "二値化します。閾値 " + lo + "〜" + hi + " の画素は 255（白）、それ以外はすべて 0（黒）になります" + (simIsUnk(fg) ? "" : "（モデルでは白が全体の約 " + Math.round(fg) + "%）") + "。中間の灰色は消えます");
       return SIM_UNK;
     }
     case "Invert": {
       var im4 = needImg("run(\"Invert\")"), mx = Math.pow(2, im4.bit) - 1;
-      im4.pixOps.push({ f: function(v){ return mx - v; } });
+      simPushOp(im4, function(v){ return mx - v; });
       step(line, "画素値を反転します（" + mx + " − 値）。たとえば暗い画素 30 は " + (mx - 30) + " に、明るい画素 200 は " + (mx - 200) + " になります");
       return SIM_UNK;
     }
@@ -1906,7 +1907,7 @@ function simRunCmd(S, cmdRaw, opt, line, H){
       var imI = needImg("run(\"Split Channels\")");
       if (imI.channels <= 1){ step(line, "チャンネル分割ですが、この画像はチャンネルが1つなので分割されません（実際の複合画像ではチャンネルごとの画像に分かれます）"); return SIM_UNK; }
       var parts = [];
-      for (var ci = 0; ci < imI.channels; ci++){ var cp = Object.assign({}, imI, { title: "C" + (ci + 1) + "-" + imI.title, channels: 1, pix: {} }); parts.push(cp); }
+      for (var ci = 0; ci < imI.channels; ci++){ var cp = Object.assign({}, imI, { title: "C" + (ci + 1) + "-" + imI.title, channels: 1, pix: {}, buckets: imI.buckets ? imI.buckets.slice() : null, mapOps: imI.mapOps.slice() }); parts.push(cp); }
       S.images.splice.apply(S.images, [S.active, 1].concat(parts)); S.active = S.active;
       step(line, "チャンネルごとに " + parts.length + " 枚の画像へ分割します");
       return SIM_UNK;
@@ -1915,7 +1916,7 @@ function simRunCmd(S, cmdRaw, opt, line, H){
     case "Duplicate": {
       var imJ = needImg("run(\"Duplicate\")");
       var tm = /title=([^\s]+)/.exec(opt);
-      var dup = Object.assign({}, imJ, { title: tm ? tm[1] : imJ.title + "-1", pix: {} });
+      var dup = Object.assign({}, imJ, { title: tm ? tm[1] : imJ.title + "-1", pix: {}, buckets: imJ.buckets ? imJ.buckets.slice() : null, mapOps: imJ.mapOps.slice() });
       S.images.push(dup);
       step(line, "画像のコピー「" + dup.title + "」を作ります（元画像は変わりません）");
       return SIM_UNK;
@@ -1941,7 +1942,7 @@ function simRunCmd(S, cmdRaw, opt, line, H){
     case "Enhance Contrast": {
       var imO = needImg("run(\"Enhance Contrast\")");
       var rg = simImgRange(imO);
-      if (rg && rg[1] > rg[0]){ var mn2 = rg[0], sc = 255 / (rg[1] - rg[0]); imO.pixOps.push({ f: function(v){ return (v - mn2) * sc; } }); }
+      if (rg && rg[1] > rg[0]){ var mn2 = rg[0], sc = 255 / (rg[1] - rg[0]); simPushOp(imO, function(v){ return (v - mn2) * sc; }); }
       step(line, "コントラストを広げます。最も暗い画素が 0、最も明るい画素が 255 付近になるよう画素値を引き伸ばします");
       return SIM_UNK;
     }
