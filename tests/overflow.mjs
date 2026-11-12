@@ -1,12 +1,14 @@
 // 全ページ要素単位はみ出し走査: node tests/overflow.mjs
 import { createRequire } from "node:module";
-const require = createRequire("/home/hatch/workspace/dev/g-ai-master/package.json");
-const { chromium } = require("playwright");
+const require = createRequire(import.meta.url);
+// playwright はローカル node_modules → グローバル（NODE_PATH）の順に解決する
+let chromium;
+try { ({ chromium } = require("playwright")); } catch (e) { ({ chromium } = require(require.resolve("playwright", { paths: (process.env.NODE_PATH || "").split(":").filter(Boolean) }))); }
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 
-const root = "/home/hatch/workspace/dev/imagej";
+const root = new URL("../", import.meta.url).pathname;
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
 const server = http.createServer((req, res) => {
   const rel = decodeURIComponent(req.url.split("?")[0].split("#")[0]);
