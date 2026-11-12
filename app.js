@@ -1630,7 +1630,13 @@ function simRunProgram(code){
       }
       case "assign": {
         var isComp = e.op !== "=";
-        var curFirst = isComp ? evExpr(e.target) : null; /* 複合代入は右辺の評価より前に左辺の値を読む（getAssignmentExpression） */
+        var curFirst = null;
+        if (isComp && e.target.t === "index"){
+          /* 複合代入でも要素代入と同じく、範囲外なら先に配列が拡張されてから読み取る（doArrayElementAssignment） */
+          var ob0 = evExpr(e.target.obj), ix0 = num(evExpr(e.target.ix), e.line);
+          if (Array.isArray(ob0) && ix0 >= 0 && ix0 >= ob0.length){ expandArr(ob0, ix0); curFirst = ob0[ix0]; }
+          else curFirst = evExpr(e.target);
+        } else if (isComp) curFirst = evExpr(e.target); /* 複合代入は右辺の評価より前に左辺の値を読む（getAssignmentExpression） */
         var rv = evExpr(e.v, isComp ? 0 : (simStartsStringy(e.v) ? 1 : 0));
         if (isComp) rv = evBin({ t: "bin", op: e.op.charAt(0), l: { t: "lit", v: curFirst }, r: { t: "lit", v: rv }, line: e.line }, 0);
         setTarget(e.target, rv, e.line);
@@ -1641,12 +1647,19 @@ function simRunProgram(code){
     if (e.t === "lit") return e.v;
     throw simErr(e.line || 0, "この式は解釈できませんでした", "対応していない構文のため、説明を省略します。");
   }
+  /* 範囲外の要素代入では配列が自動拡張される（Interpreter.doArrayElementAssignment、expandableArrays の既定は有効）。
+     拡張された要素は、数値配列では NaN、文字列配列（先頭要素が文字列）では文字列 "undefined" で埋まる。 */
+  function expandArr(ob, ix){
+    var fill = (ob.length > 0 && typeof ob[0] === "string") ? "undefined" : NaN;
+    for (var k = ob.length; k <= ix; k++) ob[k] = fill;
+  }
   function setTarget(tgt, v, line){
     if (tgt.t === "var"){ writeVar(tgt.name, v); return; }
     if (tgt.t === "index"){
       var ob = evExpr(tgt.obj), ix = num(evExpr(tgt.ix), line);
       if (!Array.isArray(ob)) throw simErr(line, "配列でないものに要素代入はできません", "");
-      if (ix < 0 || ix >= ob.length) throw simErr(line, "配列の範囲外（" + ix + "）へ代入しようとしています", "配列の要素数は " + ob.length + " で、番号は 0〜" + (ob.length - 1) + " です。");
+      if (ix < 0) throw simErr(line, "配列へ負の番号（" + ix + "）で代入しようとしています", "ImageJ ではここでエラーになり止まります。");
+      if (ix >= ob.length) expandArr(ob, ix);
       ob[ix] = v; return;
     }
     throw simErr(line, "代入先が不正です", "");
