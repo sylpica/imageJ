@@ -536,14 +536,7 @@ function vPractice(){
       '<div class="ed-wrap"><pre class="ed-gutter" id="edGutter" aria-hidden="true">1</pre>' +
       '<textarea id="macroEd" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="マクロのコード"></textarea></div>' +
       '<div id="pracGuide"></div>' +
-    "</section>" +
-    '<aside class="prac-ref">' +
-      '<div class="prac-used" id="pracUsed" hidden></div>' +
-      '<div class="prac-ref-tools"><input type="search" id="pracKw" placeholder="関数を検索" value="' + esc(prac.kw) + '" aria-label="関数検索">' +
-      '<div class="chips">' + ['<button type="button" class="chip" data-pcat="all">すべて</button>']
-        .concat(Object.keys(FCATS).map(function(c){ return '<button type="button" class="chip" data-pcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("") + "</div></div>" +
-      '<div class="prac-ref-body" id="pracRefBody"></div>' +
-    "</aside></div>" +
+    "</section></div>" +
     '<section class="prac-sim" id="pracSim">' +
       '<div class="sim-head"><h2>実行シミュレーション</h2>' +
       '<div class="sim-modes" role="group" aria-label="シミュレーションの表示方法">' +
@@ -553,6 +546,13 @@ function vPractice(){
       '<span class="sim-state" id="simState" role="status"></span></div>' +
       '<div id="simOut" class="sim-out"></div>' +
     "</section></div>" +
+    '<aside class="prac-ref">' +
+      '<div class="prac-used" id="pracUsed" hidden></div>' +
+      '<div class="prac-ref-tools"><input type="search" id="pracKw" placeholder="関数を検索" value="' + esc(prac.kw) + '" aria-label="関数検索">' +
+      '<div class="chips">' + ['<button type="button" class="chip" data-pcat="all">すべて</button>']
+        .concat(Object.keys(FCATS).map(function(c){ return '<button type="button" class="chip" data-pcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("") + "</div></div>" +
+      '<div class="prac-ref-body" id="pracRefBody"></div>' +
+    "</aside>" +
     '<p class="foot-note">マクロの実行はこのアプリでは行えません。「実行シミュレーション」はモデル画像を前提にコードの動きを言葉で説明するもので、実際の実行結果ではありません。書いたコードは .ijm で保存し、Fiji ではファイルをウィンドウへドラッグ＆ドロップ（または File &gt; Open…）してスクリプトエディタで開き、［Run］で実行してください。ImageJ の Plugins &gt; Macros &gt; Run… でも実行できますが、文字列中の日本語は文字化けします。エディタ内の Tab はインデントになり、Esc の後の Tab でフォーカスが移ります。下書きはこの端末に自動保存されます。.ijm などのマクロファイルは、エディタへドラッグ＆ドロップして読み込むこともできます。</p>';
   view.innerHTML = html;
   var root = document.getElementById("pracRoot");
@@ -566,7 +566,9 @@ function vPractice(){
     box.innerHTML = '<div class="prac-guide"><h2>' + esc(t.name) + " ― 解説</h2>" +
       '<p class="pg-prep">' + linkTerms(t.prep) + "</p>" +
       t.guide.map(function(p){ return "<p>" + linkTerms(p) + "</p>"; }).join("") +
-      "<h3>改造ポイント</h3><ul>" + t.tries.map(function(x){ return "<li>" + linkTerms(x) + "</li>"; }).join("") + "</ul></div>";
+      "<h3>改造ポイント</h3><ul>" + t.tries.map(function(x){ return "<li>" + linkTerms(x) + "</li>"; }).join("") + "</ul>" +
+      '<p class="pg-off-row"><button type="button" class="mini-btn" id="guideOff">テンプレートを解除</button></p></div>';
+    document.getElementById("guideOff").addEventListener("click", function(){ showGuide(null); });
   }
   var initTpl = MACRO_TEMPLATES.findIndex(function(t){ return t.code === ed.value; });
   if (initTpl >= 0) showGuide(initTpl);
@@ -574,6 +576,8 @@ function vPractice(){
   function remember(){ prac.selS = ed.selectionStart; prac.selE = ed.selectionEnd; prac.scroll = ed.scrollTop; }
   function setTab(t){
     prac.tab = t; root.setAttribute("data-tab", t);
+    var refEl = view.querySelector(".prac-ref");
+    if (refEl) refEl.setAttribute("data-tab", t);
     view.querySelectorAll("[data-ptab]").forEach(function(b){
       var on = b.getAttribute("data-ptab") === t;
       b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false");
@@ -707,6 +711,7 @@ function vPractice(){
   document.getElementById("btnClear").addEventListener("click", function(){
     if (!pracIsPristine(ed.value) && !window.confirm("コードをすべて消去しますか？")) return;
     edReplace("", 0, ed.value.length);
+    showGuide(null);
   });
   document.getElementById("btnCopy").addEventListener("click", function(){
     var b = this;
@@ -743,6 +748,7 @@ function vPractice(){
       text = text.replace(/\r\n?/g, "\n");
       if (!pracIsPristine(ed.value) && !window.confirm("現在のコードを、ドロップしたファイルの内容で置き換えますか？")) return;
       var direct = edReplace(text, 0, ed.value.length);
+      showGuide(null);
       ed.setSelectionRange(0, 0); ed.scrollTop = 0; remember();
       if (window.innerWidth < 860) setTab("code");
       stat.textContent = f.name + " を読み込みました" + (direct ? "（大きなファイルのため、この読み込みは Ctrl+Z で戻せません）" : "") + (text.indexOf("\uFFFD") >= 0 ? "（文字化けがある場合は、UTF-8 で保存し直したファイルを試してください）" : "");
@@ -847,7 +853,17 @@ function vPractice(){
     while (cur < ln){ var nl = v.indexOf("\n", pos); if (nl < 0) break; pos = nl + 1; cur++; }
     var end = v.indexOf("\n", pos); if (end < 0) end = v.length;
     if (window.innerWidth < 860) setTab("code");
-    ed.focus(); ed.setSelectionRange(pos, end); remember();
+    ed.focus(); ed.setSelectionRange(pos, end);
+    /* 選択だけではブラウザ任せでスクロールしない環境がある（特にモバイル）ため、
+       該当行がエディタの視野中央に来るようスクロール位置を明示的に決める */
+    var cs = getComputedStyle(ed);
+    var lh = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) || 13.5) * 1.65;
+    var padT = parseFloat(cs.paddingTop) || 0;
+    ed.scrollTop = Math.max(0, Math.round(padT + (ln - 1) * lh - ed.clientHeight / 2 + lh / 2));
+    gut.scrollTop = ed.scrollTop;
+    /* 狭い画面ではエディタ自体が画面外にあることがあるので、画面もエディタへ寄せる */
+    if (window.innerWidth < 860) ed.scrollIntoView({ block: "nearest" });
+    remember();
   }
   function runSim(){
     var r = null;
