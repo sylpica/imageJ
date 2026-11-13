@@ -888,7 +888,7 @@ function vPractice(){
   var simPaths = null;
   var simSingleResult = null, simCode = null;
   function simPathTruncText(t, cap){
-    if (t === "paths") return "分岐の組み合わせが多いため、パスは先着" + (cap || 1000) + "件までを表示しています（全パスではありません）。";
+    if (t === "paths") return "分岐の組み合わせが多いため、パスは先着" + (cap || 2000) + "件までを表示しています（全パスではありません）。";
     if (t === "forks") return "分岐が深すぎるため、一部の分岐は既定の選び方（真／1回実行）で固定して表示しています。";
     return "パスの列挙に時間がかかるため、途中で打ち切りました。表示は一部のパスだけです。";
   }
@@ -910,13 +910,18 @@ function vPractice(){
     else desc.textContent = "";
     document.getElementById("simPathBody").innerHTML = simBodyHtml(cur);
     updateUsed();
-    var prevB = document.getElementById("simPathPrev"), nextB = document.getElementById("simPathNext");
+    var firstB = document.getElementById("simPathFirst"), prevB = document.getElementById("simPathPrev"),
+        nextB = document.getElementById("simPathNext"), lastB = document.getElementById("simPathLast");
     var ae = document.activeElement; /* 無効化した瞬間にフォーカスが外れるので、先に控える */
-    prevB.disabled = simPaths.pos <= 0;
-    nextB.disabled = simPaths.pos >= n - 1;
-    /* 端でボタンが無効化されるとフォーカスが外れて矢印キーが届かなくなるため、反対側へ寄せる */
-    if (ae === prevB && prevB.disabled) nextB.focus();
-    else if (ae === nextB && nextB.disabled) prevB.focus();
+    firstB.disabled = prevB.disabled = simPaths.pos <= 0;
+    nextB.disabled = lastB.disabled = simPaths.pos >= n - 1;
+    var jumpI = document.getElementById("simPathJump");
+    if (jumpI) jumpI.value = simPaths.pos + 1;
+    /* 端でボタンが無効化されるとフォーカスが外れて矢印キーが届かなくなるため、有効なボタンへ寄せる */
+    var navBtns = [firstB, prevB, nextB, lastB];
+    if (navBtns.indexOf(ae) >= 0 && ae.disabled){
+      for (var bi = 0; bi < navBtns.length; bi++){ if (!navBtns[bi].disabled){ navBtns[bi].focus(); break; } }
+    }
     simState.textContent = "診断 " + (simPaths.statics.length + (cur.rtDiags || []).length) + " 件／ステップ " + cur.steps.length + " 件／パス " + n + " 件";
   }
   function switchPath(d){
@@ -925,6 +930,18 @@ function vPractice(){
     if (np < 0 || np >= simPaths.list.length) return;
     simPaths.pos = np;
     simPaths.cur = simPaths.list[simPaths.order[np]];
+    renderPathInto();
+  }
+  /* 番号指定で直接移動する。範囲外は端に寄せ（クランプ）、数値でない入力は無視する */
+  function gotoPath(p){
+    if (!simPaths || simStale) return;
+    var n = simPaths.list.length;
+    p = Math.floor(Number(p));
+    if (!isFinite(p)) return;
+    if (p < 1) p = 1;
+    if (p > n) p = n;
+    simPaths.pos = p - 1;
+    simPaths.cur = simPaths.list[simPaths.order[p - 1]];
     renderPathInto();
   }
   function runSim(){
@@ -964,9 +981,12 @@ function vPractice(){
     h += simDiagsHtml(simPaths.statics);
     if (simPaths.truncated) h += '<p class="sim-note sim-path-trunc">' + esc(simPathTruncText(simPaths.truncated, simPaths.cap)) + "</p>";
     h += '<div class="sim-paths">' +
+      '<button type="button" class="mini-btn" id="simPathFirst" aria-label="先頭の分岐パスへ" title="先頭へ">«</button>' +
       '<button type="button" class="mini-btn" id="simPathPrev" aria-label="前の分岐パス">◀</button>' +
       '<span class="sim-path-pos" id="simPathPos" role="status"></span>' +
       '<button type="button" class="mini-btn" id="simPathNext" aria-label="次の分岐パス">▶</button>' +
+      '<button type="button" class="mini-btn" id="simPathLast" aria-label="末尾の分岐パスへ" title="末尾へ">»</button>' +
+      '<span class="sim-path-jump"><input type="number" id="simPathJump" min="1" step="1" aria-label="移動先のパス番号"><button type="button" class="mini-btn" id="simPathGo">移動</button></span>' +
       '<label class="sim-path-sortlb">並び替え <select id="simPathSort" aria-label="分岐パスの並び替え">' +
       '<option value="order">出現順</option><option value="long">コードが長い順</option><option value="short">処理が短い順</option>' +
       "</select></label></div>" +
@@ -986,6 +1006,11 @@ function vPractice(){
     });
     document.getElementById("simPathPrev").addEventListener("click", function(){ switchPath(-1); });
     document.getElementById("simPathNext").addEventListener("click", function(){ switchPath(1); });
+    document.getElementById("simPathFirst").addEventListener("click", function(){ gotoPath(1); });
+    document.getElementById("simPathLast").addEventListener("click", function(){ if (simPaths) gotoPath(simPaths.list.length); });
+    var jumpI = document.getElementById("simPathJump");
+    document.getElementById("simPathGo").addEventListener("click", function(){ gotoPath(jumpI.value); });
+    jumpI.addEventListener("keydown", function(ev){ if (ev.key === "Enter"){ ev.preventDefault(); gotoPath(jumpI.value); } });
     renderPathInto();
   }
   function setSimMode(m){
@@ -1004,7 +1029,7 @@ function vPractice(){
       simStale = true;
       simOut.classList.add("sim-stale");
       simOut.querySelectorAll("button[data-simline]").forEach(function(b){ b.disabled = true; });
-      ["simPathPrev", "simPathNext", "simPathSort"].forEach(function(id){
+      ["simPathFirst", "simPathPrev", "simPathNext", "simPathLast", "simPathJump", "simPathGo", "simPathSort"].forEach(function(id){
         var el = simOut.querySelector("#" + id);
         if (el) el.disabled = true;
       });
@@ -2228,7 +2253,7 @@ function simRunPaths(code){
   try { first = simRunProgram(code, { tape: [] }); }
   catch (e){ if (!(e && e.__needFork)) throw e; }
   if (first) return { single: first };
-  var MAXP = 1000, MAXFORK = 24, TLIMIT = 5000, T0 = Date.now();
+  var MAXP = 2000, MAXFORK = 24, TLIMIT = 6000, T0 = Date.now();
   var paths = [], trunc = "";
   /* パスは「仮定の組み合わせ」そのものなので、結果が同じでも統合しない（全部表示する） */
   function addPath(r){ if (r) paths.push(r); }
