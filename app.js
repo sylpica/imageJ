@@ -538,6 +538,7 @@ function vPractice(){
       '<div id="pracGuide"></div>' +
     "</section>" +
     '<aside class="prac-ref">' +
+      '<div class="prac-used" id="pracUsed" hidden></div>' +
       '<div class="prac-ref-tools"><input type="search" id="pracKw" placeholder="関数を検索" value="' + esc(prac.kw) + '" aria-label="関数検索">' +
       '<div class="chips">' + ['<button type="button" class="chip" data-pcat="all">すべて</button>']
         .concat(Object.keys(FCATS).map(function(c){ return '<button type="button" class="chip" data-pcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("") + "</div></div>" +
@@ -552,7 +553,7 @@ function vPractice(){
       '<span class="sim-state" id="simState" role="status"></span></div>' +
       '<div id="simOut" class="sim-out"></div>' +
     "</section></div>" +
-    '<p class="foot-note">マクロの実行はこのアプリでは行えません。「実行シミュレーション」はモデル画像を前提にコードの動きを言葉で説明するもので、実際の実行結果ではありません。書いたコードは .ijm で保存し、Fiji ではファイルをウィンドウへドラッグ＆ドロップ（または File &gt; Open…）してスクリプトエディタで開き、［Run］で実行してください。ImageJ の Plugins &gt; Macros &gt; Run… でも実行できますが、文字列中の日本語は文字化けします。エディタ内の Tab はインデントになり、Esc の後の Tab でフォーカスが移ります。下書きはこの端末に自動保存されます。</p>';
+    '<p class="foot-note">マクロの実行はこのアプリでは行えません。「実行シミュレーション」はモデル画像を前提にコードの動きを言葉で説明するもので、実際の実行結果ではありません。書いたコードは .ijm で保存し、Fiji ではファイルをウィンドウへドラッグ＆ドロップ（または File &gt; Open…）してスクリプトエディタで開き、［Run］で実行してください。ImageJ の Plugins &gt; Macros &gt; Run… でも実行できますが、文字列中の日本語は文字化けします。エディタ内の Tab はインデントになり、Esc の後の Tab でフォーカスが移ります。下書きはこの端末に自動保存されます。.ijm などのマクロファイルは、エディタへドラッグ＆ドロップして読み込むこともできます。</p>';
   view.innerHTML = html;
   var root = document.getElementById("pracRoot");
   var ed = document.getElementById("macroEd"), gut = document.getElementById("edGutter"), stat = document.getElementById("pracStat");
@@ -595,6 +596,42 @@ function vPractice(){
       var at = Number(this.getAttribute("data-at"));
       ed.focus(); ed.setSelectionRange(at, at + 1); remember();
     });
+    renderUsed(v);
+  }
+  /* コードで使われている関数（リファレンスに載っているもの）を、出現順にリファレンス欄の上部へ出す。
+     文字列とコメントの中は数えない。ユーザー定義関数はリファレンスに無いので対象外 */
+  function pracUsedFuncs(code){
+    var out = [], seen = {}, i = 0, n = code.length;
+    function isId(c){ return /[A-Za-z_$]/.test(c); }
+    function isIdn(c){ return /[A-Za-z0-9_$]/.test(c); }
+    while (i < n){
+      var c = code[i];
+      if (c === "/" && code[i + 1] === "/"){ while (i < n && code[i] !== "\n") i++; continue; }
+      if (c === "/" && code[i + 1] === "*"){ i += 2; while (i < n && !(code[i] === "*" && code[i + 1] === "/")) i++; i += 2; continue; }
+      if (c === '"' || c === "'"){ var q = c; i++; while (i < n && code[i] !== q){ if (code[i] === "\\") i++; i++; } i++; continue; }
+      if (isId(c)){
+        var j = i; while (j < n && isIdn(code[j])) j++;
+        var name = code.slice(i, j);
+        if (code[j] === "."){ var k = j + 1; while (k < n && isIdn(code[k])) k++; if (k > j + 1) name = name + "." + code.slice(j + 1, k), j = k; }
+        var m = j; while (m < n && (code[m] === " " || code[m] === "\t")) m++;
+        if (code[m] === "(" && !seen[name] && funcByName(name)){ seen[name] = 1; out.push(name); }
+        i = j; continue;
+      }
+      i++;
+    }
+    return out;
+  }
+  function renderUsed(code){
+    var box = document.getElementById("pracUsed");
+    if (!box) return;
+    var used = pracUsedFuncs(code);
+    if (!used.length){ box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    box.innerHTML = '<p class="prac-used-t">使用中の関数</p><div class="chips">' +
+      used.map(function(nm){ return '<button type="button" class="chip" data-used="' + esc(nm) + '">' + esc(nm) + "</button>"; }).join("") + "</div>";
+    box.querySelectorAll("[data-used]").forEach(function(b){
+      b.addEventListener("click", function(){ prac.fn = b.getAttribute("data-used"); renderPracRef(); });
+    });
   }
   function onInput(){
     store.macroDraft = ed.value; remember();
@@ -603,16 +640,23 @@ function vPractice(){
     refresh();
     simOnInput();
   }
-  // 範囲 [s, e) を text で置き換える。execCommand が使える環境では Ctrl+Z で取り消せる
+  // 範囲 [s, e) を text で置き換える。execCommand が使える環境では Ctrl+Z で取り消せる。
+  // ただし大きな置き換えで execCommand を使うと環境によって極端に遅くなる（実測: 500行で66秒）ため、
+  // 挿入・削除とも 1500 字を超える場合は値を直接セットする（この場合は Ctrl+Z で戻せない）。
+  // 戻り値: 直接セットした場合 true
   function edReplace(text, s, e){
     var before = ed.value, expect = before.slice(0, s) + text + before.slice(e);
-    if (expect === before) return;
+    if (expect === before) return false;
     ed.focus(); ed.setSelectionRange(s, e);
-    try { document.execCommand(text ? "insertText" : "delete", false, text); } catch(_){}
+    if (text.length <= 1500 && e - s <= 1500){
+      try { document.execCommand(text ? "insertText" : "delete", false, text); } catch(_){}
+    }
     if (ed.value !== expect){
       ed.value = expect; ed.setSelectionRange(s + text.length, s + text.length);
       ed.dispatchEvent(new Event("input"));
+      return true;
     }
+    return false;
   }
   setTab(prac.tab); setCat(prac.cat);
   refresh();
@@ -677,6 +721,35 @@ function vPractice(){
     a.href = URL.createObjectURL(blob); a.download = "macro.ijm";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
+  });
+  /* マクロファイル（.ijm など）のドラッグ＆ドロップで読み込む。置き換えはテンプレートと同じ確認ルール、
+     反映は edReplace 経由（Ctrl+Z で戻せる・下書き保存やシミュレーション連動は通常の入力と同じ経路） */
+  var edWrap = view.querySelector(".ed-wrap");
+  view.addEventListener("dragover", function(ev){ ev.preventDefault(); });
+  view.addEventListener("drop", function(ev){ ev.preventDefault(); });
+  edWrap.addEventListener("dragenter", function(ev){ ev.preventDefault(); edWrap.classList.add("drop-over"); });
+  edWrap.addEventListener("dragover", function(ev){ ev.preventDefault(); edWrap.classList.add("drop-over"); });
+  edWrap.addEventListener("dragleave", function(ev){ if (!edWrap.contains(ev.relatedTarget)) edWrap.classList.remove("drop-over"); });
+  edWrap.addEventListener("drop", function(ev){
+    ev.preventDefault(); edWrap.classList.remove("drop-over");
+    var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (!f) return;
+    if (!/\.(ijm|txt|js)$/i.test(f.name) && !/^text\//.test(f.type || "")){ stat.textContent = "テキスト形式のマクロファイル（.ijm など）をドロップしてください"; return; }
+    if (f.size > 1024 * 1024){ stat.textContent = "ファイルが大きすぎます（1MBまで）"; return; }
+    var rd = new FileReader();
+    rd.onload = function(){
+      var text = String(rd.result || "");
+      if (text.indexOf("\u0000") >= 0){ stat.textContent = "テキストとして読み込めませんでした"; return; }
+      text = text.replace(/\r\n?/g, "\n");
+      if (!pracIsPristine(ed.value) && !window.confirm("現在のコードを、ドロップしたファイルの内容で置き換えますか？")) return;
+      var direct = edReplace(text, 0, ed.value.length);
+      ed.setSelectionRange(0, 0); ed.scrollTop = 0; remember();
+      if (window.innerWidth < 860) setTab("code");
+      stat.textContent = f.name + " を読み込みました" + (direct ? "（大きなファイルのため、この読み込みは Ctrl+Z で戻せません）" : "") + (text.indexOf("\uFFFD") >= 0 ? "（文字化けがある場合は、UTF-8 で保存し直したファイルを試してください）" : "");
+      ed.focus();
+    };
+    rd.onerror = function(){ stat.textContent = "ファイルの読み込みに失敗しました"; };
+    rd.readAsText(f, "UTF-8");
   });
   view.querySelectorAll("[data-ptab]").forEach(function(b){ b.addEventListener("click", function(){ setTab(b.getAttribute("data-ptab")); }); });
   document.getElementById("pracKw").addEventListener("input", function(){ prac.kw = this.value; prac.fn = null; renderPracRef(); });
