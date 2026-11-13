@@ -598,7 +598,7 @@ function vPractice(){
       var at = Number(this.getAttribute("data-at"));
       ed.focus(); ed.setSelectionRange(at, at + 1); remember();
     });
-    renderUsed(v);
+    updateUsed();
   }
   /* コードで使われている関数（リファレンスに載っているもの）を、出現順にリファレンス欄の上部へ出す。
      文字列とコメントの中は数えない。ユーザー定義関数はリファレンスに無いので対象外 */
@@ -623,17 +623,33 @@ function vPractice(){
     }
     return out;
   }
-  function renderUsed(code){
+  function renderUsedBox(fns, vars){
     var box = document.getElementById("pracUsed");
     if (!box) return;
-    var used = pracUsedFuncs(code);
-    if (!used.length){ box.hidden = true; box.innerHTML = ""; return; }
+    var fnList = (fns || []).filter(function(nm){ return funcByName(nm); });
+    var varList = vars || [];
+    if (!fnList.length && !varList.length){ box.hidden = true; box.innerHTML = ""; return; }
     box.hidden = false;
-    box.innerHTML = '<p class="prac-used-t">使用中の関数</p><div class="chips">' +
-      used.map(function(nm){ return '<button type="button" class="chip" data-used="' + esc(nm) + '">' + esc(nm) + "</button>"; }).join("") + "</div>";
+    var h = "";
+    if (fnList.length)
+      h += '<p class="prac-used-t">使用中の関数</p><div class="chips">' +
+        fnList.map(function(nm){ return '<button type="button" class="chip" data-used="' + esc(nm) + '">' + esc(nm) + "</button>"; }).join("") + "</div>";
+    if (varList.length)
+      h += '<p class="prac-used-t">変数（終わったときの値）</p><div class="chips">' +
+        varList.map(function(v){ return '<span class="chip used-var"><b>' + esc(v.name) + "</b> = " + esc(v.value) + "</span>"; }).join("") + "</div>";
+    box.innerHTML = h;
     box.querySelectorAll("[data-used]").forEach(function(b){
       b.addEventListener("click", function(){ prac.fn = b.getAttribute("data-used"); renderPracRef(); });
     });
+  }
+  /* 「使用中の関数」と変数は、実行シミュレーションが今表示している内容（選択中のパスで
+     実際に現れた関数と、そのパスの最後の変数）から出す。シミュレーションがまだ無い・
+     コードが変わって古くなっている間は、従来の静的抽出（関数のみ）でつなぐ */
+  function updateUsed(){
+    if (!simRan || simStale || simCode !== ed.value){ renderUsedBox(pracUsedFuncs(ed.value), null); return; }
+    if (simPaths){ renderUsedBox(simPaths.cur.usedFns || [], simPaths.cur.vars || []); return; }
+    if (simSingleResult){ renderUsedBox(simSingleResult.usedFns || [], simSingleResult.vars || []); return; }
+    renderUsedBox(pracUsedFuncs(ed.value), null);
   }
   function onInput(){
     store.macroDraft = ed.value; remember();
@@ -833,6 +849,7 @@ function vPractice(){
   }
   /* --- 実行シミュレーションの配線 --- */
   var simMode = store.simMode === "auto" ? "auto" : "button";
+  var simPathSort = (store.simPathSort === "long" || store.simPathSort === "short") ? store.simPathSort : "order";
   var simRan = false, simDirty = false, simTimer = null, simStale = false;
   var simOut = document.getElementById("simOut");
   /* 説明エントリ（ステップ・診断・Log）のクリックで対応行へ移動する。委譲で一度だけ配線する。
@@ -842,6 +859,17 @@ function vPractice(){
     if (ev.target.closest && ev.target.closest(".term")) return;
     var b = ev.target.closest ? ev.target.closest("[data-simline]") : null;
     if (b && !b.disabled) simJump(Number(b.getAttribute("data-simline")));
+  });
+  /* 分岐パスのキーボード切替：結果パネル内にフォーカスがある時だけ（エディタのカーソル移動と競合させない）。
+     並び替えセレクトにフォーカスがある時は、その本来のキー操作を優先する */
+  simOut.addEventListener("keydown", function(ev){
+    if (!simPaths || simStale) return;
+    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+    var tg = ev.target;
+    if (tg && (tg.tagName === "SELECT" || tg.tagName === "INPUT" || tg.tagName === "TEXTAREA")) return;
+    if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+    ev.preventDefault();
+    switchPath(ev.key === "ArrowLeft" ? -1 : 1);
   });
   var simRunBtn = document.getElementById("simRun");
   var simState = document.getElementById("simState");
@@ -863,14 +891,108 @@ function vPractice(){
     if (window.innerWidth < 860) ed.scrollIntoView({ block: "nearest" });
     remember();
   }
+  var simPaths = null;
+  var simSingleResult = null, simCode = null;
+  function simPathTruncText(t){
+    if (t === "paths") return "分岐の組み合わせが多いため、パスは先着100件までを表示しています（全パスではありません）。";
+    if (t === "forks") return "分岐が深すぎるため、一部の分岐は既定の選び方（真／1回実行）で固定して表示しています。";
+    return "パスの列挙に時間がかかるため、途中で打ち切りました。表示は一部のパスだけです。";
+  }
+  function applyPathOrder(){
+    if (!simPaths) return;
+    var idx = simPaths.list.map(function(_, i){ return i; });
+    if (simPaths.sort === "long") idx.sort(function(a, b){ return (simPaths.list[b].steps.length - simPaths.list[a].steps.length) || (a - b); });
+    else if (simPaths.sort === "short") idx.sort(function(a, b){ return (simPaths.list[a].steps.length - simPaths.list[b].steps.length) || (a - b); });
+    simPaths.order = idx;
+    simPaths.pos = idx.indexOf(simPaths.list.indexOf(simPaths.cur));
+  }
+  function renderPathInto(){
+    if (!simPaths) return;
+    var cur = simPaths.cur, n = simPaths.list.length;
+    document.getElementById("simPathPos").textContent = "パス " + (simPaths.pos + 1) + " / " + n;
+    var desc = document.getElementById("simPathDesc");
+    if (cur.forkLabels && cur.forkLabels.length)
+      desc.textContent = "このパスの仮定：" + cur.forkLabels.map(function(l){ return l.line + "行目：" + (l.kind === "if" ? "条件 → " : "繰り返し → ") + l.text; }).join("／");
+    else desc.textContent = "";
+    document.getElementById("simPathBody").innerHTML = simBodyHtml(cur);
+    updateUsed();
+    var prevB = document.getElementById("simPathPrev"), nextB = document.getElementById("simPathNext");
+    var ae = document.activeElement; /* 無効化した瞬間にフォーカスが外れるので、先に控える */
+    prevB.disabled = simPaths.pos <= 0;
+    nextB.disabled = simPaths.pos >= n - 1;
+    /* 端でボタンが無効化されるとフォーカスが外れて矢印キーが届かなくなるため、反対側へ寄せる */
+    if (ae === prevB && prevB.disabled) nextB.focus();
+    else if (ae === nextB && nextB.disabled) prevB.focus();
+    simState.textContent = "診断 " + (simPaths.statics.length + (cur.rtDiags || []).length) + " 件／ステップ " + cur.steps.length + " 件／パス " + n + " 件";
+  }
+  function switchPath(d){
+    if (!simPaths || simStale) return;
+    var np = simPaths.pos + d;
+    if (np < 0 || np >= simPaths.list.length) return;
+    simPaths.pos = np;
+    simPaths.cur = simPaths.list[simPaths.order[np]];
+    renderPathInto();
+  }
   function runSim(){
-    var r = null;
-    try { r = simRunProgram(ed.value); } catch (err) { r = null; }
-    if (!r){ simOut.innerHTML = '<p class="sim-note">説明を生成できませんでした。コードを少し変えて試してください。</p>'; return; }
-    simOut.innerHTML = simRender(r);
+    var res = null;
+    simCode = ed.value;
+    try { res = simRunPaths(ed.value); } catch (err) { res = null; }
+    if (!res){ simOut.innerHTML = '<p class="sim-note">説明を生成できませんでした。コードを少し変えて試してください。</p>'; simPaths = null; simSingleResult = null; return; }
     simRan = true; simDirty = false; simStale = false;
     simOut.classList.remove("sim-stale");
-    simState.textContent = "診断 " + r.diags.length + " 件／ステップ " + r.steps.length + " 件";
+    if (res.single){
+      simPaths = null;
+      simSingleResult = res.single;
+      simOut.innerHTML = simRender(res.single);
+      simState.textContent = "診断 " + res.single.diags.length + " 件／ステップ " + res.single.steps.length + " 件";
+      updateUsed();
+      return;
+    }
+    if (res.paths.length <= 1 && !res.truncated){
+      simPaths = null;
+      var only = res.paths[0];
+      if (!only){ simOut.innerHTML = '<p class="sim-note">コードが空か、説明できる処理がありませんでした。</p>'; simState.textContent = ""; simSingleResult = null; updateUsed(); return; }
+      var merged = {};
+      Object.keys(only).forEach(function(k){ merged[k] = only[k]; });
+      merged.diags = (res.statics || []).concat(only.rtDiags || []);
+      merged.premise = res.premise;
+      simSingleResult = merged;
+      simOut.innerHTML = simRender(merged);
+      simState.textContent = "診断 " + merged.diags.length + " 件／ステップ " + merged.steps.length + " 件";
+      updateUsed();
+      return;
+    }
+    simSingleResult = null;
+    simPaths = { list: res.paths, statics: res.statics || [], premise: res.premise, truncated: res.truncated, sort: simPathSort, cur: res.paths[0], order: [], pos: 0 };
+    applyPathOrder();
+    var h = "";
+    if (simPaths.premise) h += '<p class="sim-premise">' + esc(simPaths.premise) + "</p>";
+    h += simDiagsHtml(simPaths.statics);
+    if (simPaths.truncated) h += '<p class="sim-note sim-path-trunc">' + esc(simPathTruncText(simPaths.truncated)) + "</p>";
+    h += '<div class="sim-paths">' +
+      '<button type="button" class="mini-btn" id="simPathPrev" aria-label="前の分岐パス">◀</button>' +
+      '<span class="sim-path-pos" id="simPathPos" role="status"></span>' +
+      '<button type="button" class="mini-btn" id="simPathNext" aria-label="次の分岐パス">▶</button>' +
+      '<label class="sim-path-sortlb">並び替え <select id="simPathSort" aria-label="分岐パスの並び替え">' +
+      '<option value="order">出現順</option><option value="long">コードが長い順</option><option value="short">処理が短い順</option>' +
+      "</select></label></div>" +
+      '<p class="sim-path-desc" id="simPathDesc"></p>' +
+      '<div id="simPathBody"></div>';
+    simOut.innerHTML = h;
+    var sel = document.getElementById("simPathSort");
+    sel.value = simPaths.sort;
+    sel.addEventListener("change", function(){
+      if (!simPaths) return;
+      simPaths.sort = this.value; simPathSort = this.value; store.simPathSort = this.value; save();
+      applyPathOrder();
+      /* 並び替えたら、その順序の先頭のパスを表示する（探すための操作なので） */
+      simPaths.pos = 0;
+      simPaths.cur = simPaths.list[simPaths.order[0]];
+      renderPathInto();
+    });
+    document.getElementById("simPathPrev").addEventListener("click", function(){ switchPath(-1); });
+    document.getElementById("simPathNext").addEventListener("click", function(){ switchPath(1); });
+    renderPathInto();
   }
   function setSimMode(m){
     simMode = m; store.simMode = m; save();
@@ -888,6 +1010,10 @@ function vPractice(){
       simStale = true;
       simOut.classList.add("sim-stale");
       simOut.querySelectorAll("button[data-simline]").forEach(function(b){ b.disabled = true; });
+      ["simPathPrev", "simPathNext", "simPathSort"].forEach(function(id){
+        var el = simOut.querySelector("#" + id);
+        if (el) el.disabled = true;
+      });
     }
     if (simMode === "auto"){
       if (simTimer) clearTimeout(simTimer);
@@ -1498,7 +1624,7 @@ function simExprStr(e){
   return "…";
 }
 /* --- 実行シミュレーション本体 --- */
-function simRunProgram(code){
+function simRunProgram(code, forkCtl){
   var out = { diags: [], steps: [], log: [], logLines: [], vars: [], img: null, mapping: null, halted: false, premise: "" };
   var bc = pracCheck(code);
   if (bc){
@@ -1518,14 +1644,43 @@ function simRunProgram(code){
     funcs: funcs, steps: out.steps, diags: out.diags, log: out.log, logLines: out.logLines,
     images: [simDemoImage()], active: 0, results: [], roi: null, roiList: [],
     batch: false, scopes: [Object.create(null)], globals: Object.create(null), suppress: 0, depth: 0,
-    halt: false, divWarned: false, stepCap: false, budget: 300000
+    halt: false, divWarned: false, stepCap: false, budget: 300000,
+    fork: forkCtl || null, forkIdx: 0, forkLabels: [], forkFilled: false,
+    used: [], usedSet: Object.create(null)
   };
+  /* その実行で実際に呼ばれた関数を出現順に記録する（「使用中の関数」表示の材料）。
+     値メソッド（s.contains 等）は従来の静的抽出と同じく対象外。名前空間つき呼び出しは Array.sort の形で記録する */
+  function noteUsed(name){ if (name && !S.usedSet[name]){ S.usedSet[name] = 1; S.used.push(name); } }
   function step(line, text){
     if (S.suppress > 0 || S.stepCap) return;
     if (S.steps.length >= 300){ S.stepCap = true; S.steps.push({ line: line, text: "（ステップが多いため、以降の説明は省略します）" }); return; }
     S.steps.push({ line: line, text: text });
   }
-  function rwarn(line, text, cause){ S.diags.push({ sev: "warn", line: line, text: text, cause: cause || "" }); }
+  function rwarn(line, text, cause){
+    var d = { sev: "warn", line: line, text: text, cause: cause || "" };
+    if (S.fork) d.rt = 1; /* パス列挙時は実行時診断として静的診断と分ける */
+    S.diags.push(d);
+  }
+  /* 分岐パスの列挙：条件が実行時の値で決まる地点で、仮定の選び方を返す。
+     forkCtl が無い通常実行では呼ばれない。ステップを抑制中（繰り返しの2回目以降など）は
+     列挙対象にせず、従来どおり既定側（真）を返す。テープが尽きたら __needFork を投げて
+     列挙側に分岐を要求する */
+  function simFork(line, kind, condStr, trueText, falseText){
+    if (!S.fork || S.suppress > 0) return true;
+    var idx = S.forkIdx;
+    if (idx < S.fork.tape.length){
+      var ch = !!S.fork.tape[idx];
+      S.forkIdx++;
+      S.forkLabels.push({ line: line, kind: kind, cond: condStr, choice: ch, text: ch ? trueText : falseText });
+      return ch;
+    }
+    if (S.fork.fill){
+      S.forkIdx++; S.forkFilled = true;
+      S.forkLabels.push({ line: line, kind: kind, cond: condStr, choice: true, text: trueText, filled: 1 });
+      return true;
+    }
+    throw { __needFork: 1 };
+  }
   function img(){ return S.active >= 0 ? S.images[S.active] : null; }
   function needImg(line, what){
     var im = img();
@@ -1873,6 +2028,7 @@ function simRunProgram(code){
   var REF_FNS_SKIP = { "Array.getStatistics": 1 };
   function evCall(e){
     var name = e.name;
+    noteUsed(name);
     if (Object.prototype.hasOwnProperty.call(S.funcs, name)){
       var fn = S.funcs[name];
       var vals = e.args.map(function(a){ return evExpr(a); });
@@ -1932,8 +2088,15 @@ function simRunProgram(code){
       case "if": {
         var c = condBool(evExpr(st.cond), st.line);
         if (c === null){
-          step(st.line, "条件（" + simExprStr(st.cond) + "）は実行時の値で決まります。ここでは「真」の側で説明します");
-          execStmt(st.then);
+          if (!S.fork){
+            step(st.line, "条件（" + simExprStr(st.cond) + "）は実行時の値で決まります。ここでは「真」の側で説明します");
+            execStmt(st.then);
+          } else {
+            var ich = simFork(st.line, "if", simExprStr(st.cond), "真", "偽");
+            if (ich){ step(st.line, "条件（" + simExprStr(st.cond) + "）は実行時の値で決まります。このパスでは「真」と仮定して、中身を実行します"); execStmt(st.then); }
+            else if (st.els){ step(st.line, "条件（" + simExprStr(st.cond) + "）は実行時の値で決まります。このパスでは「偽」と仮定して、else 側を実行します"); execStmt(st.els); }
+            else step(st.line, "条件（" + simExprStr(st.cond) + "）は実行時の値で決まります。このパスでは「偽」と仮定して、中身は実行されません");
+          }
         } else {
           step(st.line, "条件（" + simExprStr(st.cond) + "）は" + (c ? "真" : "偽") + " → " + (c ? "中身を実行します" : st.els ? "else 側を実行します" : "中身は実行されません"));
           if (c) execStmt(st.then); else if (st.els) execStmt(st.els);
@@ -1947,14 +2110,28 @@ function simRunProgram(code){
     }
   }
   function execLoop(st){
-    var isDo = st.t === "do", count = 0;
+    var isDo = st.t === "do", count = 0, unkUsed = false;
     S.suppress++;
     try { if (st.init){ if (st.init.t === "vardecl") execVarDecl(st.init); else evExpr(st.init); } } finally { S.suppress--; }
     step(st.line, (st.t === "for" ? "for" : st.t) + " の繰り返しに入ります" + (st.init ? "（" + simExprStr(st.init) + "）" : ""));
     for (;;){
       var go = true;
       if (!isDo || count > 0){
-        if (st.cond){ var c = condBool(evExpr(st.cond), st.line); if (c === null){ if (count === 0){ step(st.line, "繰り返しの条件は実行時の値で決まるため、1回分だけ説明します"); } else break; } else if (!c) break; }
+        if (st.cond){ var c = condBool(evExpr(st.cond), st.line);
+          if (c === null){
+            if (!S.fork){
+              if (count === 0){ step(st.line, "繰り返しの条件は実行時の値で決まるため、1回分だけ説明します"); } else break;
+            } else if (unkUsed){
+              step(st.line, "（繰り返しの条件が実行時の値で決まるため、このパスではここで終わります）");
+              break;
+            } else {
+              var lch = simFork(st.line, "loop", simExprStr(st.cond), "1回実行", (count === 0 && !isDo) ? "入らない" : "ここで終わる");
+              if (!lch){ step(st.line, "繰り返しの条件（" + simExprStr(st.cond) + "）は実行時の値で決まります。このパスでは「偽」と仮定して、" + ((count === 0 && !isDo) ? "繰り返しには入りません" : "ここで繰り返しを終わります")); break; }
+              step(st.line, "繰り返しの条件（" + simExprStr(st.cond) + "）は実行時の値で決まります。このパスでは1回分を実行してから終わるものとします");
+              unkUsed = true;
+            }
+          } else if (!c) break;
+        }
       }
       count++;
       spendBudget(st.line);
@@ -2024,6 +2201,7 @@ function simRunProgram(code){
   out.diags.forEach(function(d){ if (d.runtime) rtLines[d.line + "|" + d.text] = 1; });
   out.diags = out.diags.filter(function(d){ return d.runtime || !rtLines[d.line + "|" + d.text]; });
   out.log = S.log;
+  out.usedFns = S.used.slice();
   var g = {};
   Object.keys(S.globals).forEach(function(k){ g[k] = S.globals[k]; });
   Object.keys(S.scopes[0]).forEach(function(k){ g[k] = S.scopes[0][k]; });
@@ -2038,33 +2216,90 @@ function simRunProgram(code){
     }
   } else out.img = { none: 1, results: S.results.length };
   out.premise = "前提：モデル画像 demo.tif（512×512・8ビット、暗い背景に明るい対象がある分布）が1枚開かれているものとして説明します。数値はモデルによる目安で、実際の画像では変わります。";
+  if (S.fork){
+    out.forkLabels = S.forkLabels;
+    out.forkFilled = !!S.forkFilled;
+    out.rtDiags = out.diags.filter(function(d){ return d.runtime || d.rt; });
+    var rtKeys = {};
+    out.rtDiags.forEach(function(d){ rtKeys[d.line + "|" + d.text] = 1; });
+    out.staticDiags = out.diags.filter(function(d){ return !d.runtime && !d.rt && !rtKeys[d.line + "|" + d.text]; });
+  }
   return out;
+}
+/* 分岐パスの列挙：条件が実行時の値で決まる分岐（if／繰り返し）について、仮定の組み合わせを
+   深さ優先でたどり、結果が異なるパスを集める。値が確定している分岐は実際の1通りだけをたどる
+   （取りえないパスは作らない）。上限に達したら truncated に理由を入れて正直に知らせる */
+function simRunPaths(code){
+  var first = null;
+  try { first = simRunProgram(code, { tape: [] }); }
+  catch (e){ if (!(e && e.__needFork)) throw e; }
+  if (first) return { single: first };
+  var MAXP = 100, MAXFORK = 24, TLIMIT = 2000, T0 = Date.now();
+  var paths = [], trunc = "";
+  /* パスは「仮定の組み合わせ」そのものなので、結果が同じでも統合しない（全部表示する） */
+  function addPath(r){ if (r) paths.push(r); }
+  function dfs(tape){
+    if (paths.length >= MAXP){ trunc = trunc || "paths"; return; }
+    if (Date.now() - T0 > TLIMIT){ trunc = trunc || "time"; return; }
+    var r = null;
+    try { r = simRunProgram(code, { tape: tape }); }
+    catch (e){ if (!(e && e.__needFork)) throw e; }
+    if (r){ addPath(r); return; }
+    if (tape.length >= MAXFORK){
+      trunc = trunc || "forks";
+      var r2 = null;
+      try { r2 = simRunProgram(code, { tape: tape, fill: true }); }
+      catch (e2){ if (!(e2 && e2.__needFork)) throw e2; }
+      addPath(r2);
+      return;
+    }
+    dfs(tape.concat([true]));  /* 既定側（従来の説明と同じ側）を先に */
+    dfs(tape.concat([false]));
+  }
+  dfs([]);
+  return { paths: paths, truncated: trunc,
+    statics: paths.length ? (paths[0].staticDiags || []) : [],
+    premise: paths.length ? paths[0].premise : "" };
 }
 
 
 /* --- シミュレーション結果の表示 --- */
+function simDiagsHtml(diags){
+  if (!diags.length) return "";
+  return '<div class="sim-diags">' + diags.map(function(d){
+    return '<div class="sim-diag ' + (d.sev === "err" ? "err" : "warn") + '">' +
+      (d.line ? '<button type="button" class="sim-ln" data-simline="' + d.line + '">' + d.line + "行</button>" : '<span class="sim-ln sim-ln-x">全体</span>') +
+      '<div class="sim-diag-body"><p class="sim-diag-t">' + (d.sev === "err" ? "エラー：" : "注意：") + esc(d.text) + "</p>" +
+      (d.cause ? '<p class="sim-diag-c">' + esc(d.cause) + "</p>" : "") + "</div></div>";
+  }).join("") + "</div>";
+}
+function simStepsHtml(steps){
+  if (!steps.length) return "";
+  return '<ol class="sim-steps">' + steps.map(function(s){
+    var body = "<span>" + linkTerms(s.text, 4) + "</span>";
+    if (typeof s.line === "number" && s.line >= 1 && Math.floor(s.line) === s.line)
+      return '<li data-simline="' + s.line + '"><button type="button" class="sim-ln" data-simline="' + s.line + '" aria-label="' + s.line + "行目へ移動：" + esc(s.text.slice(0, 60)) + '">' + s.line + "</button>" + body + "</li>";
+    return "<li>" + body + "</li>";
+  }).join("") + "</ol>";
+}
 function simRender(r){
   if (!r.steps.length && !r.diags.length)
     return '<p class="sim-note">コードが空か、説明できる処理がありませんでした。</p>';
   var h = "";
   if (r.premise) h += '<p class="sim-premise">' + esc(r.premise) + "</p>";
-  if (r.diags.length){
-    h += '<div class="sim-diags">' + r.diags.map(function(d){
-      return '<div class="sim-diag ' + (d.sev === "err" ? "err" : "warn") + '">' +
-        (d.line ? '<button type="button" class="sim-ln" data-simline="' + d.line + '">' + d.line + "行</button>" : '<span class="sim-ln sim-ln-x">全体</span>') +
-        '<div class="sim-diag-body"><p class="sim-diag-t">' + (d.sev === "err" ? "エラー：" : "注意：") + esc(d.text) + "</p>" +
-        (d.cause ? '<p class="sim-diag-c">' + esc(d.cause) + "</p>" : "") + "</div></div>";
-    }).join("") + "</div>";
-  }
-  if (r.steps.length){
-    h += '<ol class="sim-steps">' + r.steps.map(function(s){
-      var body = "<span>" + linkTerms(s.text, 4) + "</span>";
-      if (typeof s.line === "number" && s.line >= 1 && Math.floor(s.line) === s.line)
-        return '<li data-simline="' + s.line + '"><button type="button" class="sim-ln" data-simline="' + s.line + '" aria-label="' + s.line + "行目へ移動：" + esc(s.text.slice(0, 60)) + '">' + s.line + "</button>" + body + "</li>";
-      return "<li>" + body + "</li>";
-    }).join("") + "</ol>";
-  }
-  h += '<div class="sim-final"><h3>終わったときの状態</h3>';
+  h += simDiagsHtml(r.diags);
+  h += simStepsHtml(r.steps);
+  h += simFinalHtml(r);
+  return h;
+}
+/* 分岐パスの1件分（前提と静的診断はパス一覧側でまとめて出す） */
+function simBodyHtml(r){
+  if (!r.steps.length && !(r.rtDiags && r.rtDiags.length))
+    return '<p class="sim-note">このパスでは、説明できる処理がありませんでした。</p>' + simFinalHtml(r);
+  return simDiagsHtml(r.rtDiags || []) + simStepsHtml(r.steps) + simFinalHtml(r);
+}
+function simFinalHtml(r){
+  var h = '<div class="sim-final"><h3>終わったときの状態</h3>';
   if (r.img && !r.img.none){
     h += '<p>画像：「' + esc(r.img.title) + "」" +
       (typeof r.img.w === "number" ? "（" + r.img.w + "×" + r.img.h + "、" + r.img.bit + "ビット" + (r.img.channels > 1 ? "、チャンネル " + r.img.channels : "") + (r.img.slices > 1 ? "、スライス " + r.img.slices : "") + "）" : "（寸法は不明）") +
@@ -2986,10 +3221,11 @@ function vQuizSetup(){
   });
   document.getElementById("histReset").addEventListener("click", function(){
     if (!confirm("学習履歴・ブックマーク・完了記録をすべて消します。よろしいですか？")) return;
-    var keepDraft = store.macroDraft, keepSimMode = store.simMode; /* マクロの下書きと表示設定はリセット対象外 */
+    var keepDraft = store.macroDraft, keepSimMode = store.simMode, keepSimPathSort = store.simPathSort; /* マクロの下書きと表示設定はリセット対象外 */
     store = { hist:{}, bm:[], lessonDone:[], docBm:[], lastDoc:{} };
     if (keepDraft !== undefined) store.macroDraft = keepDraft;
     if (keepSimMode !== undefined) store.simMode = keepSimMode;
+    if (keepSimPathSort !== undefined) store.simPathSort = keepSimPathSort;
     save(); vQuizSetup();
   });
 }
