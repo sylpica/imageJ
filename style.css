@@ -293,6 +293,8 @@ pre.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;backgr
 .sim-path-sortlb{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-left:auto}
 .sim-path-sortlb select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);color:var(--ink);min-height:38px}
 .sim-path-desc{font-size:12.5px;color:var(--muted);margin:2px 0 8px;overflow-wrap:anywhere}
+.sim-path-jump{display:flex;align-items:center;gap:6px}
+.sim-path-jump input{width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--panel);color:var(--ink);min-height:38px}
 .sim-path-trunc{color:var(--warn);font-weight:600}
 @media (max-width: 859px){ .prac-sim{padding:11px 11px} }
 
