@@ -535,8 +535,14 @@ function vPractice(){
         '<span class="prac-stat" id="pracStat"></span></div>' +
       '<div class="ed-wrap"><pre class="ed-gutter" id="edGutter" aria-hidden="true">1</pre>' +
       '<textarea id="macroEd" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="マクロのコード"></textarea></div>' +
-      '<div id="pracGuide"></div>' +
-    "</section></div>" +
+    "</section>" +
+    '<aside class="prac-ref">' +
+      '<div class="prac-used" id="pracUsed" hidden></div>' +
+      '<div class="prac-ref-tools"><input type="search" id="pracKw" placeholder="関数を検索" value="' + esc(prac.kw) + '" aria-label="関数検索">' +
+      '<div class="chips">' + ['<button type="button" class="chip" data-pcat="all">すべて</button>']
+        .concat(Object.keys(FCATS).map(function(c){ return '<button type="button" class="chip" data-pcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("") + "</div></div>" +
+      '<div class="prac-ref-body" id="pracRefBody"></div>' +
+    "</aside></div>" +
     '<section class="prac-sim" id="pracSim">' +
       '<div class="sim-head"><h2>実行シミュレーション</h2>' +
       '<div class="sim-modes" role="group" aria-label="シミュレーションの表示方法">' +
@@ -546,13 +552,7 @@ function vPractice(){
       '<span class="sim-state" id="simState" role="status"></span></div>' +
       '<div id="simOut" class="sim-out"></div>' +
     "</section></div>" +
-    '<aside class="prac-ref">' +
-      '<div class="prac-used" id="pracUsed" hidden></div>' +
-      '<div class="prac-ref-tools"><input type="search" id="pracKw" placeholder="関数を検索" value="' + esc(prac.kw) + '" aria-label="関数検索">' +
-      '<div class="chips">' + ['<button type="button" class="chip" data-pcat="all">すべて</button>']
-        .concat(Object.keys(FCATS).map(function(c){ return '<button type="button" class="chip" data-pcat="' + c + '">' + esc(FCATS[c]) + "</button>"; })).join("") + "</div></div>" +
-      '<div class="prac-ref-body" id="pracRefBody"></div>' +
-    "</aside>" +
+    '<div id="pracGuide"></div>' +
     '<p class="foot-note">マクロの実行はこのアプリでは行えません。「実行シミュレーション」はモデル画像を前提にコードの動きを言葉で説明するもので、実際の実行結果ではありません。書いたコードは .ijm で保存し、Fiji ではファイルをウィンドウへドラッグ＆ドロップ（または File &gt; Open…）してスクリプトエディタで開き、［Run］で実行してください。ImageJ の Plugins &gt; Macros &gt; Run… でも実行できますが、文字列中の日本語は文字化けします。エディタ内の Tab はインデントになり、Esc の後の Tab でフォーカスが移ります。下書きはこの端末に自動保存されます。.ijm などのマクロファイルは、エディタへドラッグ＆ドロップして読み込むこともできます。</p>';
   view.innerHTML = html;
   var root = document.getElementById("pracRoot");
@@ -576,8 +576,6 @@ function vPractice(){
   function remember(){ prac.selS = ed.selectionStart; prac.selE = ed.selectionEnd; prac.scroll = ed.scrollTop; }
   function setTab(t){
     prac.tab = t; root.setAttribute("data-tab", t);
-    var refEl = view.querySelector(".prac-ref");
-    if (refEl) refEl.setAttribute("data-tab", t);
     view.querySelectorAll("[data-ptab]").forEach(function(b){
       var on = b.getAttribute("data-ptab") === t;
       b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false");
