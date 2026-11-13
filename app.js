@@ -623,33 +623,27 @@ function vPractice(){
     }
     return out;
   }
-  function renderUsedBox(fns, vars){
+  function renderUsedBox(fns){
     var box = document.getElementById("pracUsed");
     if (!box) return;
     var fnList = (fns || []).filter(function(nm){ return funcByName(nm); });
-    var varList = vars || [];
-    if (!fnList.length && !varList.length){ box.hidden = true; box.innerHTML = ""; return; }
+    if (!fnList.length){ box.hidden = true; box.innerHTML = ""; return; }
     box.hidden = false;
-    var h = "";
-    if (fnList.length)
-      h += '<p class="prac-used-t">使用中の関数</p><div class="chips">' +
-        fnList.map(function(nm){ return '<button type="button" class="chip" data-used="' + esc(nm) + '">' + esc(nm) + "</button>"; }).join("") + "</div>";
-    if (varList.length)
-      h += '<p class="prac-used-t">変数（終わったときの値）</p><div class="chips">' +
-        varList.map(function(v){ return '<span class="chip used-var"><b>' + esc(v.name) + "</b> = " + esc(v.value) + "</span>"; }).join("") + "</div>";
-    box.innerHTML = h;
+    box.innerHTML = '<p class="prac-used-t">使用中の関数</p><div class="chips">' +
+      fnList.map(function(nm){ return '<button type="button" class="chip" data-used="' + esc(nm) + '">' + esc(nm) + "</button>"; }).join("") + "</div>";
     box.querySelectorAll("[data-used]").forEach(function(b){
       b.addEventListener("click", function(){ prac.fn = b.getAttribute("data-used"); renderPracRef(); });
     });
   }
-  /* 「使用中の関数」と変数は、実行シミュレーションが今表示している内容（選択中のパスで
-     実際に現れた関数と、そのパスの最後の変数）から出す。シミュレーションがまだ無い・
-     コードが変わって古くなっている間は、従来の静的抽出（関数のみ）でつなぐ */
+  /* 「使用中の関数」は、実行シミュレーションが今表示している内容（選択中のパスで
+     実際に現れた関数）から出す。シミュレーションがまだ無い・コードが変わって
+     古くなっている間は、従来の静的抽出でつなぐ。変数の状態は下のシミュレーション
+     結果（最終状態）に出るので、右側には出さない（ユーザー指示 2026-11-13） */
   function updateUsed(){
-    if (!simRan || simStale || simCode !== ed.value){ renderUsedBox(pracUsedFuncs(ed.value), null); return; }
-    if (simPaths){ renderUsedBox(simPaths.cur.usedFns || [], simPaths.cur.vars || []); return; }
-    if (simSingleResult){ renderUsedBox(simSingleResult.usedFns || [], simSingleResult.vars || []); return; }
-    renderUsedBox(pracUsedFuncs(ed.value), null);
+    if (!simRan || simStale || simCode !== ed.value){ renderUsedBox(pracUsedFuncs(ed.value)); return; }
+    if (simPaths){ renderUsedBox(simPaths.cur.usedFns || []); return; }
+    if (simSingleResult){ renderUsedBox(simSingleResult.usedFns || []); return; }
+    renderUsedBox(pracUsedFuncs(ed.value));
   }
   function onInput(){
     store.macroDraft = ed.value; remember();
@@ -893,8 +887,8 @@ function vPractice(){
   }
   var simPaths = null;
   var simSingleResult = null, simCode = null;
-  function simPathTruncText(t){
-    if (t === "paths") return "分岐の組み合わせが多いため、パスは先着100件までを表示しています（全パスではありません）。";
+  function simPathTruncText(t, cap){
+    if (t === "paths") return "分岐の組み合わせが多いため、パスは先着" + (cap || 1000) + "件までを表示しています（全パスではありません）。";
     if (t === "forks") return "分岐が深すぎるため、一部の分岐は既定の選び方（真／1回実行）で固定して表示しています。";
     return "パスの列挙に時間がかかるため、途中で打ち切りました。表示は一部のパスだけです。";
   }
@@ -963,12 +957,12 @@ function vPractice(){
       return;
     }
     simSingleResult = null;
-    simPaths = { list: res.paths, statics: res.statics || [], premise: res.premise, truncated: res.truncated, sort: simPathSort, cur: res.paths[0], order: [], pos: 0 };
+    simPaths = { list: res.paths, statics: res.statics || [], premise: res.premise, truncated: res.truncated, cap: res.cap, sort: simPathSort, cur: res.paths[0], order: [], pos: 0 };
     applyPathOrder();
     var h = "";
     if (simPaths.premise) h += '<p class="sim-premise">' + esc(simPaths.premise) + "</p>";
     h += simDiagsHtml(simPaths.statics);
-    if (simPaths.truncated) h += '<p class="sim-note sim-path-trunc">' + esc(simPathTruncText(simPaths.truncated)) + "</p>";
+    if (simPaths.truncated) h += '<p class="sim-note sim-path-trunc">' + esc(simPathTruncText(simPaths.truncated, simPaths.cap)) + "</p>";
     h += '<div class="sim-paths">' +
       '<button type="button" class="mini-btn" id="simPathPrev" aria-label="前の分岐パス">◀</button>' +
       '<span class="sim-path-pos" id="simPathPos" role="status"></span>' +
@@ -2234,7 +2228,7 @@ function simRunPaths(code){
   try { first = simRunProgram(code, { tape: [] }); }
   catch (e){ if (!(e && e.__needFork)) throw e; }
   if (first) return { single: first };
-  var MAXP = 100, MAXFORK = 24, TLIMIT = 2000, T0 = Date.now();
+  var MAXP = 1000, MAXFORK = 24, TLIMIT = 5000, T0 = Date.now();
   var paths = [], trunc = "";
   /* パスは「仮定の組み合わせ」そのものなので、結果が同じでも統合しない（全部表示する） */
   function addPath(r){ if (r) paths.push(r); }
@@ -2257,7 +2251,7 @@ function simRunPaths(code){
     dfs(tape.concat([false]));
   }
   dfs([]);
-  return { paths: paths, truncated: trunc,
+  return { paths: paths, truncated: trunc, cap: MAXP,
     statics: paths.length ? (paths[0].staticDiags || []) : [],
     premise: paths.length ? paths[0].premise : "" };
 }
