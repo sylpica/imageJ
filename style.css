@@ -264,7 +264,20 @@ pre.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;backgr
   font-family:ui-monospace,Menlo,Consolas,monospace}
 .sim-chip b{color:var(--acc)}
 .sim-log{background:#12242f;color:#d7f0e8;border-radius:9px;padding:11px 14px;font-size:13.5px;line-height:1.65;
-  overflow-x:auto;white-space:pre;font-family:ui-monospace,Menlo,Consolas,monospace;margin:6px 0}
+  font-family:ui-monospace,Menlo,Consolas,monospace;margin:6px 0}
+.sim-logln{display:flex;gap:9px;align-items:flex-start;width:100%;background:none;border:0;color:inherit;
+  font:inherit;text-align:left;padding:2px;border-radius:6px;cursor:pointer}
+.sim-logln:hover{background:rgba(255,255,255,.09)}
+.sim-logln-x{display:flex;gap:9px;align-items:flex-start;padding:2px}
+.sim-logt{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.sim-ln-d{background:transparent;color:#9fd8c9;border-color:rgba(255,255,255,.35)}
+.sim-ln-off{visibility:hidden}
+.sim-steps li{padding:3px 5px}
+.sim-steps li[data-simline]{cursor:pointer;border-radius:8px}
+.sim-steps li[data-simline]:hover{background:var(--bg)}
+.sim-ln:focus-visible,.sim-logln:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.sim-ln:disabled{opacity:.45;cursor:default}
+.sim-stale{opacity:.55}
 .sim-out{overflow-wrap:anywhere}
 @media (max-width: 859px){ .prac-sim{padding:11px 11px} }
 

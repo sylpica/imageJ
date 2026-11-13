@@ -756,8 +756,16 @@ function vPractice(){
   }
   /* --- 実行シミュレーションの配線 --- */
   var simMode = store.simMode === "auto" ? "auto" : "button";
-  var simRan = false, simDirty = false, simTimer = null;
+  var simRan = false, simDirty = false, simTimer = null, simStale = false;
   var simOut = document.getElementById("simOut");
+  /* 説明エントリ（ステップ・診断・Log）のクリックで対応行へ移動する。委譲で一度だけ配線する。
+     用語リンクのクリックはジャンプにしない。コードが編集された後は古い行対応を使わない（simStale）。 */
+  simOut.addEventListener("click", function(ev){
+    if (simStale) return;
+    if (ev.target.closest && ev.target.closest(".term")) return;
+    var b = ev.target.closest ? ev.target.closest("[data-simline]") : null;
+    if (b && !b.disabled) simJump(Number(b.getAttribute("data-simline")));
+  });
   var simRunBtn = document.getElementById("simRun");
   var simState = document.getElementById("simState");
   function simJump(ln){
@@ -773,11 +781,9 @@ function vPractice(){
     try { r = simRunProgram(ed.value); } catch (err) { r = null; }
     if (!r){ simOut.innerHTML = '<p class="sim-note">説明を生成できませんでした。コードを少し変えて試してください。</p>'; return; }
     simOut.innerHTML = simRender(r);
-    simRan = true; simDirty = false;
+    simRan = true; simDirty = false; simStale = false;
+    simOut.classList.remove("sim-stale");
     simState.textContent = "診断 " + r.diags.length + " 件／ステップ " + r.steps.length + " 件";
-    simOut.querySelectorAll("[data-simline]").forEach(function(b){
-      b.addEventListener("click", function(){ simJump(Number(b.getAttribute("data-simline"))); });
-    });
   }
   function setSimMode(m){
     simMode = m; store.simMode = m; save();
@@ -790,6 +796,12 @@ function vPractice(){
     else simState.textContent = simRan ? "ボタンで実行するモードです" : "";
   }
   function simOnInput(){
+    if (simRan && !simStale){
+      /* 編集されたら行対応は古くなる。再実行で再計算されるまで、古い対応でのジャンプは止める */
+      simStale = true;
+      simOut.classList.add("sim-stale");
+      simOut.querySelectorAll("button[data-simline]").forEach(function(b){ b.disabled = true; });
+    }
     if (simMode === "auto"){
       if (simTimer) clearTimeout(simTimer);
       simTimer = setTimeout(runSim, 600);
@@ -1400,7 +1412,7 @@ function simExprStr(e){
 }
 /* --- 実行シミュレーション本体 --- */
 function simRunProgram(code){
-  var out = { diags: [], steps: [], log: [], vars: [], img: null, mapping: null, halted: false, premise: "" };
+  var out = { diags: [], steps: [], log: [], logLines: [], vars: [], img: null, mapping: null, halted: false, premise: "" };
   var bc = pracCheck(code);
   if (bc){
     out.diags.push({ sev: "err", line: pracLine(code, bc.at), text: pracIssueText(code, bc), cause: "括弧や文字列が閉じていないと、ImageJ でも読み込めずエラーになります。まずここを直してください。" });
@@ -1416,7 +1428,7 @@ function simRunProgram(code){
   prog.forEach(function(st){ if (st.t === "funcdef") funcs[st.name] = st; });
   out.diags = simStaticChecks(prog, funcs);
   var S = {
-    funcs: funcs, steps: out.steps, diags: out.diags, log: out.log,
+    funcs: funcs, steps: out.steps, diags: out.diags, log: out.log, logLines: out.logLines,
     images: [simDemoImage()], active: 0, results: [], roi: null, roiList: [],
     batch: false, scopes: [Object.create(null)], globals: Object.create(null), suppress: 0, depth: 0,
     halt: false, divWarned: false, stepCap: false, budget: 300000
@@ -1959,7 +1971,10 @@ function simRender(r){
   }
   if (r.steps.length){
     h += '<ol class="sim-steps">' + r.steps.map(function(s){
-      return '<li><button type="button" class="sim-ln" data-simline="' + s.line + '">' + s.line + "</button><span>" + linkTerms(s.text, 4) + "</span></li>";
+      var body = "<span>" + linkTerms(s.text, 4) + "</span>";
+      if (typeof s.line === "number" && s.line >= 1 && Math.floor(s.line) === s.line)
+        return '<li data-simline="' + s.line + '"><button type="button" class="sim-ln" data-simline="' + s.line + '" aria-label="' + s.line + "行目へ移動：" + esc(s.text.slice(0, 60)) + '">' + s.line + "</button>" + body + "</li>";
+      return "<li>" + body + "</li>";
     }).join("") + "</ol>";
   }
   h += '<div class="sim-final"><h3>終わったときの状態</h3>';
@@ -1981,7 +1996,13 @@ function simRender(r){
     h += '<div class="sim-vars">' + r.vars.map(function(v){ return '<span class="sim-chip"><b>' + esc(v.name) + "</b> = " + esc(v.value) + "</span>"; }).join("") + "</div>";
   }
   if (r.log && r.log.length){
-    h += '<h3>Log ウィンドウの出力</h3><pre class="sim-log">' + esc(r.log.join("\n")) + "</pre>";
+    var ll = r.logLines || [];
+    h += '<h3>Log ウィンドウの出力</h3><div class="sim-log">' + r.log.map(function(t, i){
+      var ln = ll[i];
+      if (typeof ln === "number" && ln >= 1)
+        return '<button type="button" class="sim-logln" data-simline="' + ln + '"><span class="sim-ln sim-ln-d">' + ln + '</span><span class="sim-logt">' + esc(t) + "</span></button>";
+      return '<div class="sim-logln-x"><span class="sim-ln sim-ln-d sim-ln-off" aria-hidden="true">·</span><span class="sim-logt">' + esc(t) + "</span></div>";
+    }).join("") + "</div>";
   }
   h += "</div>";
   return h;
@@ -2057,8 +2078,8 @@ function simBuiltin(S, e, args, refs, H){
   switch (name){
     case "print": case "log": {
       var txt = args.map(function(a){ return simFmt(a); }).join(" ");
-      if (S.log.length < 200) S.log.push(txt);
-      else if (S.log.length === 200) S.log.push("（Log 出力が200行を超えたため、以降は省略します）");
+      if (S.log.length < 200){ S.log.push(txt); S.logLines.push(line); }
+      else if (S.log.length === 200){ S.log.push("（Log 出力が200行を超えたため、以降は省略します）"); S.logLines.push(0); }
       step(line, "Log に「" + txt + "」と出力します");
       return SIM_UNK;
     }
