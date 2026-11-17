@@ -553,7 +553,7 @@ function vPractice(){
       '<div id="simOut" class="sim-out"></div>' +
     "</section></div>" +
     '<div id="pracGuide"></div>' +
-    '<p class="foot-note">マクロの実行はこのアプリでは行えません。「実行シミュレーション」はモデル画像を前提にコードの動きを言葉で説明するもので、実際の実行結果ではありません。書いたコードは .ijm で保存し、Fiji ではファイルをウィンドウへドラッグ＆ドロップ（または File &gt; Open…）してスクリプトエディタで開き、［Run］で実行してください。ImageJ の Plugins &gt; Macros &gt; Run… でも実行できますが、文字列中の日本語は文字化けします。エディタ内の Tab はインデントになり、Esc の後の Tab でフォーカスが移ります。下書きはこの端末に自動保存されます。.ijm などのマクロファイルは、エディタへドラッグ＆ドロップして読み込むこともできます。</p>';
+    '<p class="foot-note">マクロの実行はこのアプリでは行えません。「実行シミュレーション」はモデル画像を前提にコードの動きを言葉で説明するもので、実際の実行結果ではありません。書いたコードは .ijm で保存し、Fiji ではファイルをウィンドウへドラッグ＆ドロップ（または File &gt; Open…）してスクリプトエディタで開き、［Run］で実行してください。ImageJ の Plugins &gt; Macros &gt; Run… でも実行できますが、文字列中の日本語は文字化けします。エディタ内の Tab はインデントになり、Esc の後の Tab でフォーカスが移ります。下書きはこの端末に自動保存されます。.ijm などのマクロファイルは、エディタへドラッグ＆ドロップして読み込むこともできます（文字コードは UTF-8 と CP932 を自動判定します）。</p>';
   view.innerHTML = html;
   var root = document.getElementById("pracRoot");
   var ed = document.getElementById("macroEd"), gut = document.getElementById("edGutter"), stat = document.getElementById("pracStat");
@@ -738,6 +738,19 @@ function vPractice(){
   /* マクロファイル（.ijm など）のドラッグ＆ドロップで読み込む。置き換えはテンプレートと同じ確認ルール、
      反映は edReplace 経由（Ctrl+Z で戻せる・下書き保存やシミュレーション連動は通常の入力と同じ経路） */
   var edWrap = view.querySelector(".ed-wrap");
+  /* 文字コードの自動判定：UTF-8（BOM付き含む）を厳密デコードで試し、失敗したら CP932（Shift_JIS）で読む。
+     Windows のエディタ等で CP932 保存されたマクロファイルでも文字化けしないようにするため */
+  function decodeMacroBytes(buf){
+    var bytes = new Uint8Array(buf || new ArrayBuffer(0));
+    if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF){
+      return { text: new TextDecoder("utf-8").decode(bytes.subarray(3)), enc: "UTF-8" };
+    }
+    try {
+      return { text: new TextDecoder("utf-8", { fatal: true }).decode(bytes), enc: "UTF-8" };
+    } catch(_){
+      return { text: new TextDecoder("shift_jis").decode(bytes), enc: "CP932" };
+    }
+  }
   view.addEventListener("dragover", function(ev){ ev.preventDefault(); });
   view.addEventListener("drop", function(ev){ ev.preventDefault(); });
   edWrap.addEventListener("dragenter", function(ev){ ev.preventDefault(); edWrap.classList.add("drop-over"); });
@@ -751,7 +764,8 @@ function vPractice(){
     if (f.size > 1024 * 1024){ stat.textContent = "ファイルが大きすぎます（1MBまで）"; return; }
     var rd = new FileReader();
     rd.onload = function(){
-      var text = String(rd.result || "");
+      var dec = decodeMacroBytes(rd.result);
+      var text = dec.text;
       if (text.indexOf("\u0000") >= 0){ stat.textContent = "テキストとして読み込めませんでした"; return; }
       text = text.replace(/\r\n?/g, "\n");
       if (!pracIsPristine(ed.value) && !window.confirm("現在のコードを、ドロップしたファイルの内容で置き換えますか？")) return;
@@ -759,11 +773,11 @@ function vPractice(){
       showGuide(null);
       ed.setSelectionRange(0, 0); ed.scrollTop = 0; remember();
       if (window.innerWidth < 860) setTab("code");
-      stat.textContent = f.name + " を読み込みました" + (direct ? "（大きなファイルのため、この読み込みは Ctrl+Z で戻せません）" : "") + (text.indexOf("\uFFFD") >= 0 ? "（文字化けがある場合は、UTF-8 で保存し直したファイルを試してください）" : "");
+      stat.textContent = f.name + " を読み込みました" + (dec.enc === "CP932" ? "（文字コード：CP932）" : "") + (direct ? "（大きなファイルのため、この読み込みは Ctrl+Z で戻せません）" : "") + (text.indexOf("\uFFFD") >= 0 ? "（文字化けがある場合は、UTF-8 または CP932 で保存し直したファイルを試してください）" : "");
       ed.focus();
     };
     rd.onerror = function(){ stat.textContent = "ファイルの読み込みに失敗しました"; };
-    rd.readAsText(f, "UTF-8");
+    rd.readAsArrayBuffer(f);
   });
   view.querySelectorAll("[data-ptab]").forEach(function(b){ b.addEventListener("click", function(){ setTab(b.getAttribute("data-ptab")); }); });
   document.getElementById("pracKw").addEventListener("input", function(){ prac.kw = this.value; prac.fn = null; renderPracRef(); });
