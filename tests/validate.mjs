@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 const dir = new URL("../", import.meta.url).pathname;
 global.window = {};
-for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js", "data-functions.js"]) {
+for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js", "data-functions.js", "data-edu.js"]) {
   eval(readFileSync(dir + f, "utf8"));
 }
 const D = window.IJDATA2;
@@ -154,6 +154,50 @@ for (const c of DOCS) {
     for (const r of e.lessons || []) ok(lids.has(r), `項目 ${e.id} レッスン参照不正 ${r}`);
     for (const n of e.terms || []) ok(tids.has(n), `項目 ${e.id} 用語参照不正 ${n}`);
   }
+}
+// ===== 画像解析教養モード（最上位レイヤー分離・教材／単語帳／クイズ） =====
+{
+  const EL = D.eduLessons || [], ET = D.eduTerms || [], EQ = D.eduQuestions || [], ES = D.eduSources || {};
+  ok(EL.length >= 12, `教養教材数 ${EL.length}`);
+  ok(ET.length >= 40, `教養用語数 ${ET.length}`);
+  ok(EQ.length >= 30, `教養問題数 ${EQ.length}`);
+  for (const k of Object.keys(ES)) ok(/^https?:\/\//.test(ES[k].url) && ES[k].name, `教養出典 ${k} 不正`);
+  const elids = new Set(EL.map(l => l.id)); ok(elids.size === EL.length, "教養教材ID重複");
+  const etids = new Set(ET.map(t => t.t)); ok(etids.size === ET.length, "教養用語名重複");
+  for (const l of EL) {
+    ok(D.eduLessonCats[l.cat], `教養教材 ${l.id} カテゴリ不正`);
+    ok(l.title && l.lead && Array.isArray(l.sections) && l.sections.length >= 3, `教養教材 ${l.id} 構成不足`);
+    for (const s of l.sections) ok(s.h && Array.isArray(s.b) && s.b.length >= 2, `教養教材 ${l.id} セクション不足`);
+    ok(Array.isArray(l.points) && l.points.length >= 3, `教養教材 ${l.id} 要点不足`);
+    ok(ES[l.src], `教養教材 ${l.id} 出典不正 ${l.src}`);
+    for (const t of l.terms || []) ok(etids.has(t), `教養教材 ${l.id} 用語参照不正 ${t}`);
+    for (const r of l.related || []) ok(elids.has(r), `教養教材 ${l.id} 関連参照不正 ${r}`);
+  }
+  for (const t of ET) {
+    ok(t.t && t.en && t.d && t.detail, `教養用語 ${t.t} 必須項目欠落`);
+    ok(Array.isArray(t.aliases), `教養用語 ${t.t} aliases 不正`);
+    ok(D.eduTermCats[t.cat], `教養用語 ${t.t} カテゴリ不正`);
+    ok(ES[t.src], `教養用語 ${t.t} 出典不正 ${t.src}`);
+    for (const r of t.related || []) ok(etids.has(r), `教養用語 ${t.t} related 不正 ${r}`);
+  }
+  const eqids = new Set(); const edist = [0, 0, 0, 0]; let elong = 0;
+  for (const q of EQ) {
+    ok(!eqids.has(q.id), `教養問題ID重複 ${q.id}`); eqids.add(q.id);
+    ok(D.eduQuestionCats[q.cat], `教養問題 ${q.id} カテゴリ不正`);
+    ok(Array.isArray(q.c) && q.c.length === 4 && q.a >= 0 && q.a <= 3, `教養問題 ${q.id} 形式不正`);
+    ok(Array.isArray(q.w) && q.w.length === 4 && q.w[q.a] === null && q.w.every((w, i) => i === q.a || (typeof w === "string" && w.length > 0)), `教養問題 ${q.id} 誤答理由不正`);
+    ok(elids.has(q.lesson), `教養問題 ${q.id} 教材参照不正 ${q.lesson}`);
+    ok(ES[q.src], `教養問題 ${q.id} 出典不正 ${q.src}`);
+    edist[q.a]++;
+    const lens = q.c.map(c => c.length), mx = Math.max(...lens);
+    if (lens[q.a] === mx && lens.filter(x => x === mx).length === 1) elong++;
+  }
+  for (const c of Object.keys(D.eduQuestionCats)) ok(EQ.filter(q => q.cat === c).length >= 4, `教養カテゴリ ${c} の問題数不足`);
+  const erate = elong / EQ.length;
+  ok(erate <= 0.25, `教養問題の最長正解率 ${(erate * 100).toFixed(1)}% > 25%`);
+  const emean = EQ.length / 4;
+  ok(edist.every(d => Math.abs(d - emean) <= Math.max(2, emean * 0.25)), `教養問題の正解位置分布 ${edist}`);
+  console.log(`edu: lessons=${EL.length} terms=${ET.length} questions=${EQ.length} uniqueLongest=${elong} (${(erate * 100).toFixed(1)}%) dist=${edist}`);
 }
 console.log(`lessons=${L.length} questions=${Q.length} terms=${T.length} docChapters=${DOCS.length} docEntries=${docEntries}`);
 if (fails.length) { console.error("VALIDATE FAIL:\n" + fails.join("\n")); process.exit(1); }

@@ -23,24 +23,27 @@ await new Promise(r => server.listen(0, "127.0.0.1", r));
 const url = `http://127.0.0.1:${server.address().port}/index.html`;
 
 global.window = {};
-for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js", "data-functions.js"])
+for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js", "data-functions.js", "data-edu.js"])
   (0, eval)(fs.readFileSync(path.join(root, f), "utf8").replace(/^window\./, "window."));
 // eval 内で window 参照できるよう global 経由にする
 const D = global.window.IJDATA2 || {};
 if (!D.lessons) { // フォールバック: require 方式
   const w = {}; global.window = w;
-  for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js", "data-functions.js"]) {
+  for (const f of ["data-lessons.js", "data-questions.js", "data-docs.js", "data-functions.js", "data-edu.js"]) {
     const code = fs.readFileSync(path.join(root, f), "utf8");
     new Function("window", code)(w);
   }
   Object.assign(D, w.IJDATA2);
 }
 
-const routes = ["#/home", "#/lessons", "#/quiz", "#/docs", "#/functions", "#/terms", "#/search?q=threshold", "#/practice"];
+const routes = ["#/home", "#/lessons", "#/quiz", "#/docs", "#/functions", "#/terms", "#/search?q=threshold", "#/practice",
+  "#/edu", "#/edu/lessons", "#/edu/terms", "#/edu/quiz", "#/search?q=" + encodeURIComponent("畳み込み")];
 for (const l of D.lessons) routes.push("#/lesson/" + l.id);
 for (const c of D.docs) routes.push("#/doc/" + c.id);
 for (const t of D.terms) routes.push("#/term/" + encodeURIComponent(t.t));
 for (const f of D.functions) routes.push("#/function/" + encodeURIComponent(f.name));
+for (const l of D.eduLessons || []) routes.push("#/edu/lesson/" + l.id);
+for (const t of D.eduTerms || []) routes.push("#/edu/term/" + encodeURIComponent(t.t));
 
 const SCAN = () => {
   const out = { doc: document.documentElement.scrollWidth - window.innerWidth, offenders: [] };
