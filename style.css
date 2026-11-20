@@ -336,3 +336,13 @@ pre.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;backgr
   .bm-btn.on{color:#ffcf6e;border-color:#8a6d1f;background:#3d3016}
   mark{background:#ffe58a;color:#1a2332}
 }
+
+/* ---------- 最上位レイヤー区分（ImageJ／画像解析教養） ---------- */
+.nav-off{display:none!important}
+a.eterm{border-bottom:1.5px dotted var(--acc);color:var(--acc);text-decoration:none}
+.divhub{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.divcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;text-decoration:none;color:var(--ink);display:block}
+.divcard.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+.divcard b{font-size:17px;display:block}
+.divcard span{color:var(--muted);font-size:13px}
+@media (max-width:560px){.divhub{grid-template-columns:1fr}}
