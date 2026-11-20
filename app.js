@@ -109,7 +109,7 @@ function linkTerms(text, limit){
 }
 function paras(arr, limit){ return (arr || []).map(function(p){ return "<p>" + linkTerms(p, limit) + "</p>"; }).join(""); }
 
-/* ---------- edu term linking（教養区分の用語は教養単語帳へリンクする） ---------- */
+/* ---------- edu term linking（教養区分の用語は教養用語集へリンクする） ---------- */
 var EDU_TERM_PAT = null, EDU_TERM_MAP = {};
 (function buildEduTermIndex(){
   var names = [];
@@ -147,7 +147,7 @@ function parasEdu(arr, limit){ return (arr || []).map(function(p){ return "<p>" 
 function relEduLessons(ids){
   if (!ids || !ids.length) return "";
   var items = ids.map(function(id){ var l = eduLessonById(id); return l ? '<a href="#/edu/lesson/' + l.id + '">' + esc(l.title) + "</a>" : ""; }).join("");
-  return items ? '<h2 class="sec">関連教材</h2><div class="rel-chips">' + items + "</div>" : "";
+  return items ? '<h2 class="sec">関連レッスン</h2><div class="rel-chips">' + items + "</div>" : "";
 }
 function relEduTerms(names){
   if (!names || !names.length) return "";
@@ -305,6 +305,8 @@ function setNav(name){
 function setDivision(div){
   document.querySelectorAll(".nav-ij").forEach(function(a){ a.classList.toggle("nav-off", div !== "ij"); });
   document.querySelectorAll(".nav-edu").forEach(function(a){ a.classList.toggle("nav-off", div !== "edu"); });
+  document.querySelectorAll("[data-divseg]").forEach(function(a){ a.classList.toggle("on", a.getAttribute("data-divseg") === div); });
+  document.body.setAttribute("data-div", div);
 }
 
 /* ---------- home ---------- */
@@ -316,10 +318,10 @@ function vHome(){
   view.innerHTML =
     '<div class="divhub">' +
     '<div class="divcard on"><b>ImageJ</b><span>ツール学習・実務リファレンス（この区分）</span></div>' +
-    '<a class="divcard" href="#/edu"><b>画像解析教養</b><span>大学レベルの画像解析の教養 ― 教材・単語帳・クイズ</span></a></div>' +
+    '<a class="divcard" href="#/edu"><b>画像解析教養</b><span>大学レベルの画像解析の教養 ― レッスン・用語集・クイズ</span></a></div>' +
     '<div class="tiles">' +
     '<a class="tile" href="#/lessons"><span class="n">' + LESSONS.length + '</span><b>レッスン</b></a>' +
-    '<a class="tile" href="#/quiz"><span class="n">' + QUESTIONS.length + '</span><b>問題</b></a>' +
+    '<a class="tile" href="#/quiz"><span class="n">' + QUESTIONS.length + '</span><b>クイズ</b></a>' +
     '<a class="tile" href="#/docs"><span class="n">' + DOCS.reduce(function(n, c){ return n + c.entries.length; }, 0) + '</span><b>ドキュメント</b></a>' +
     '<a class="tile" href="#/functions"><span class="n">' + FUNCTIONS.length + '</span><b>関数</b></a>' +
     '<a class="tile" href="#/practice"><span class="n">✎</span><b>マクロ練習</b></a>' +
@@ -330,7 +332,7 @@ function vHome(){
     '<li><a href="#/doc/D8">背景補正で信号が変わるのはなぜ？</a></li>' +
     '<li><a href="#/doc/D6">Analyze Particles で数が合わないとき</a></li>' +
     '<li><a href="#/doc/D2">ビット深度を下げると何が失われる？</a></li></ul></div>' +
-    '<h2 class="sec">あなたの記録</h2><div class="quick" style="padding-top:14px"><p style="margin:0">完了レッスン ' + doneL + " / " + LESSONS.length + "　・　解いた問題 " + seen + " 問" + (wrong ? "　・　復習待ち " + wrong + ' 問（<a href="#/quiz">問題モードで復習</a>）' : "") + "</p></div>" +
+    '<h2 class="sec">あなたの記録</h2><div class="quick" style="padding-top:14px"><p style="margin:0">完了レッスン ' + doneL + " / " + LESSONS.length + "　・　解いたクイズ " + seen + " 問" + (wrong ? "　・　復習待ち " + wrong + ' 問（<a href="#/quiz">クイズで復習</a>）' : "") + "</p></div>" +
     '<p class="notice">ドキュメント本文はImageJ公式サイト・公式Wiki等の資料をもとにした独自の要約・解説です（翻訳・転載ではありません）。各項目に出典を示しています。学習記録はこの端末内にのみ保存されます。</p>';
 }
 
@@ -385,7 +387,7 @@ function vLesson(id){
   });
 }
 
-/* ---------- edu（画像解析教養：最上位レイヤーで分離した教養区分。教材・単語帳・クイズで構成し、マクロ練習は含まない） ---------- */
+/* ---------- edu（画像解析教養：最上位レイヤーで分離した教養区分。レッスン・用語集・クイズで構成し、マクロ練習は含まない） ---------- */
 function vEduHome(){
   setNav("edu");
   view.innerHTML =
@@ -393,18 +395,18 @@ function vEduHome(){
     '<a class="divcard" href="#/home"><b>ImageJ</b><span>ツール学習・実務リファレンス</span></a>' +
     '<div class="divcard on"><b>画像解析教養</b><span>大学レベルの画像解析の教養（この区分）</span></div></div>' +
     '<h1 class="page">画像解析教養</h1>' +
-    '<p class="page-sub">デジタル画像処理の原理を、特定の道具の操作から独立して学ぶ区分です。教材・単語帳・クイズで構成します。</p>' +
+    '<p class="page-sub">デジタル画像処理の原理を、特定の道具の操作から独立して学ぶ区分です。レッスン・用語集・クイズで構成します。</p>' +
     '<div class="tiles">' +
-    '<a class="tile" href="#/edu/lessons"><span class="n">' + ELESSONS.length + '</span><b>教材</b></a>' +
-    '<a class="tile" href="#/edu/terms"><span class="n">' + ETERMS.length + '</span><b>単語帳</b></a>' +
+    '<a class="tile" href="#/edu/lessons"><span class="n">' + ELESSONS.length + '</span><b>レッスン</b></a>' +
+    '<a class="tile" href="#/edu/terms"><span class="n">' + ETERMS.length + '</span><b>用語集</b></a>' +
     '<a class="tile" href="#/edu/quiz"><span class="n">' + EQUESTIONS.length + '</span><b>クイズ</b></a></div>' +
-    '<h2 class="sec">教材の構成</h2><div class="card-list">' +
+    '<h2 class="sec">レッスンの構成</h2><div class="card-list">' +
     Object.keys(ELCATS).map(function(c){
       var ls = ELESSONS.filter(function(l){ return l.cat === c; });
-      return '<a class="card" href="#/edu/lessons"><span class="tag">' + esc(ELCATS[c]) + '</span> <b>' + ls.map(function(l){ return esc(l.title); }).join("／") + "</b><p>全 " + ls.length + " 教材</p></a>";
+      return '<a class="card" href="#/edu/lessons"><span class="tag">' + esc(ELCATS[c]) + '</span> <b>' + ls.map(function(l){ return esc(l.title); }).join("／") + "</b><p>全 " + ls.length + " レッスン</p></a>";
     }).join("") + "</div>" +
-    '<h2 class="sec">あなたの記録</h2><div class="quick" style="padding-top:14px"><p style="margin:0">完了教材 ' + store.eduDone.length + " / " + ELESSONS.length + "　・　解いたクイズ " + Object.keys(store.eduHist).length + " 問</p></div>" +
-    '<p class="notice">本文は教科書・公式ドキュメント等の一次情報を参照して新規に書き起こした独自解説です（翻訳・転載ではありません）。各教材・用語に出典を示しています。学習記録はこの端末内にのみ保存されます。</p>';
+    '<h2 class="sec">あなたの記録</h2><div class="quick" style="padding-top:14px"><p style="margin:0">完了レッスン ' + store.eduDone.length + " / " + ELESSONS.length + "　・　解いたクイズ " + Object.keys(store.eduHist).length + " 問</p></div>" +
+    '<p class="notice">本文は教科書・公式ドキュメント等の一次情報を参照して新規に書き起こした独自解説です（翻訳・転載ではありません）。各レッスン・用語に出典を示しています。学習記録はこの端末内にのみ保存されます。</p>';
 }
 var eduLessonFilter = { cat: "all", kw: "" };
 function vEduLessons(){
@@ -416,24 +418,24 @@ function vEduLessons(){
     return (eduLessonFilter.cat === "all" || l.cat === eduLessonFilter.cat) &&
       (!eduLessonFilter.kw || norm(l.title + l.lead + l.sections.map(function(s){ return s.h + s.b.join(""); }).join("")).indexOf(norm(eduLessonFilter.kw)) >= 0);
   });
-  view.innerHTML = '<h1 class="page">教材（画像解析教養）</h1>' +
-    '<div class="toolbar"><input type="search" id="elKw" placeholder="教材内を検索" value="' + esc(eduLessonFilter.kw) + '" aria-label="教材検索"></div>' +
+  view.innerHTML = '<h1 class="page">レッスン（画像解析教養）</h1>' +
+    '<div class="toolbar"><input type="search" id="elKw" placeholder="レッスン内を検索" value="' + esc(eduLessonFilter.kw) + '" aria-label="レッスン検索"></div>' +
     '<div class="chips">' + chips + "</div>" +
     (list.length ? '<div class="card-list">' + list.map(function(l){
       return '<a class="card" href="#/edu/lesson/' + l.id + '"><span class="tag">' + esc(ELCATS[l.cat] || "") + "</span> " +
         (store.eduDone.indexOf(l.id) >= 0 ? '<span class="done-mark">✓完了</span> ' : "") +
         "<b>" + esc(l.title) + "</b><p>" + esc(l.lead) + "</p></a>";
-    }).join("") + "</div>" : '<div class="empty">該当する教材がありません。</div>');
+    }).join("") + "</div>" : '<div class="empty">該当するレッスンがありません。</div>');
   document.getElementById("elKw").addEventListener("input", function(){ eduLessonFilter.kw = this.value; vEduLessons(); var el = document.getElementById("elKw"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); });
   view.querySelectorAll("[data-ecat]").forEach(function(b){ b.addEventListener("click", function(){ eduLessonFilter.cat = b.getAttribute("data-ecat"); vEduLessons(); }); });
 }
 function vEduLesson(id){
   setNav("edu-lessons");
   var l = eduLessonById(id);
-  if (!l){ view.innerHTML = '<div class="empty">教材が見つかりません。<a href="#/edu/lessons">一覧へ</a></div>'; return; }
+  if (!l){ view.innerHTML = '<div class="empty">レッスンが見つかりません。<a href="#/edu/lessons">一覧へ</a></div>'; return; }
   var idx = ELESSONS.indexOf(l);
   var done = store.eduDone.indexOf(l.id) >= 0;
-  var html = '<p class="crumb"><a href="#/edu/lessons">教材</a> ＞ ' + esc(ELCATS[l.cat] || "") + "</p>" +
+  var html = '<p class="crumb"><a href="#/edu/lessons">レッスン</a> ＞ ' + esc(ELCATS[l.cat] || "") + "</p>" +
     '<article class="article"><p class="meta-line">' + esc(ELCATS[l.cat] || "") + "</p><h1>" + esc(l.title) + "</h1>" +
     '<p class="lead">' + linkEduTerms(l.lead, 8) + "</p>";
   l.sections.forEach(function(s){
@@ -444,9 +446,9 @@ function vEduLesson(id){
   html += eduSrcLine(l.src) + "</article>";
   html += relEduLessons(l.related) + relEduTerms(l.terms);
   html += '<div class="pager">' +
-    (idx > 0 ? '<a class="btn" href="#/edu/lesson/' + ELESSONS[idx - 1].id + '">← 前の教材</a>' : "<span></span>") +
+    (idx > 0 ? '<a class="btn" href="#/edu/lesson/' + ELESSONS[idx - 1].id + '">← 前のレッスン</a>' : "<span></span>") +
     '<label class="done"><input type="checkbox" id="elDone" ' + (done ? "checked" : "") + "> 完了にする</label>" +
-    (idx < ELESSONS.length - 1 ? '<a class="btn primary" href="#/edu/lesson/' + ELESSONS[idx + 1].id + '">次の教材 →</a>' : '<a class="btn" href="#/edu/lessons">一覧へ戻る</a>') + "</div>";
+    (idx < ELESSONS.length - 1 ? '<a class="btn primary" href="#/edu/lesson/' + ELESSONS[idx + 1].id + '">次のレッスン →</a>' : '<a class="btn" href="#/edu/lessons">一覧へ戻る</a>') + "</div>";
   view.innerHTML = html;
   document.getElementById("elDone").addEventListener("change", function(){
     var i = store.eduDone.indexOf(l.id);
@@ -467,7 +469,7 @@ function vEduTerms(){
     if (!kw) return true;
     return norm(t.t + " " + (t.en || "") + " " + (t.aliases || []).join(" ") + " " + t.d).indexOf(kw) >= 0;
   });
-  view.innerHTML = '<h1 class="page">単語帳（画像解析教養）</h1>' +
+  view.innerHTML = '<h1 class="page">用語集（画像解析教養）</h1>' +
     '<div class="toolbar"><input type="search" id="etKw" placeholder="用語を検索（例：畳み込み、FFT）" value="' + esc(eduTermFilter.kw) + '" aria-label="教養用語検索"></div>' +
     '<div class="chips">' + chips + "</div>" +
     (list.length ? '<div class="card-list">' + list.map(function(t){
@@ -479,8 +481,8 @@ function vEduTerms(){
 function vEduTerm(name){
   setNav("edu-terms");
   var t = eduTermByName(name);
-  if (!t){ view.innerHTML = '<div class="empty">用語が見つかりません。<a href="#/edu/terms">単語帳へ</a></div>'; return; }
-  var html = '<p class="crumb"><a href="#/edu/terms">単語帳</a> ＞ ' + esc(ETCATS[t.cat] || "") + '</p><article class="article term-detail">' +
+  if (!t){ view.innerHTML = '<div class="empty">用語が見つかりません。<a href="#/edu/terms">用語集へ</a></div>'; return; }
+  var html = '<p class="crumb"><a href="#/edu/terms">用語集</a> ＞ ' + esc(ETCATS[t.cat] || "") + '</p><article class="article term-detail">' +
     '<p class="meta-line">' + esc(ETCATS[t.cat] || "") + "</p><h1>" + esc(t.t) + "</h1>" +
     '<p class="ts-en">' + esc(t.en || "") + (t.aliases && t.aliases.length ? "　／　別名：" + t.aliases.map(esc).join("、") : "") + "</p>" +
     '<p class="lead">' + linkEduTerms(t.d, 4) + "</p>";
@@ -3387,10 +3389,10 @@ function vTerm(name){
 
 /* ---------- quiz ---------- */
 /* クイズの出題コンテキスト：ImageJ区分と教養区分でエンジンを共有し、データ・履歴・遷移先だけを差し替える */
-var QZ_IJ = { key:"ij", list: QUESTIONS, cats: QCATS, histKey:"hist", bmKey:"bm", title:"問題", setup:"#/quiz", lessons:"#/lessons",
+var QZ_IJ = { key:"ij", list: QUESTIONS, cats: QCATS, histKey:"hist", bmKey:"bm", title:"クイズ", setup:"#/quiz", lessons:"#/lessons",
   lessonHref:function(id){ return "#/lesson/" + id; }, lessonById: lessonById, srcLineFn: srcLine, linkFn: linkTerms, relLabel:"関連レッスン", review:"レッスンで復習する", nav:"quiz", resetAll:true };
-var QZ_EDU = { key:"edu", list: EQUESTIONS, cats: EQCATS, histKey:"eduHist", bmKey:"eduBm", title:"教養クイズ", setup:"#/edu/quiz", lessons:"#/edu/lessons",
-  lessonHref:function(id){ return "#/edu/lesson/" + id; }, lessonById: eduLessonById, srcLineFn: eduSrcLine, linkFn: linkEduTerms, relLabel:"関連教材", review:"教材で復習する", nav:"edu-quiz", resetAll:false };
+var QZ_EDU = { key:"edu", list: EQUESTIONS, cats: EQCATS, histKey:"eduHist", bmKey:"eduBm", title:"クイズ（画像解析教養）", setup:"#/edu/quiz", lessons:"#/edu/lessons",
+  lessonHref:function(id){ return "#/edu/lesson/" + id; }, lessonById: eduLessonById, srcLineFn: eduSrcLine, linkFn: linkEduTerms, relLabel:"関連レッスン", review:"レッスンで復習する", nav:"edu-quiz", resetAll:false };
 var QZ = QZ_IJ;
 var quiz = null; /* {ctx, list:[{q, order:[choiceIdx...], correctPos}], i, answered:{}, score} */
 function wrongIds(ctx){ var H = store[ctx.histKey]; return ctx.list.filter(function(q){ var h = H[q.id]; return h && h.lastWrong; }).map(function(q){ return q.id; }); }
@@ -3446,6 +3448,14 @@ function startQuiz(pool){
       return { q: q, order: order, correctPos: order.indexOf(q.a) };
     }), i: 0, picked: {}, score: 0 };
   vQuizRun();
+}
+/* 検索結果などから、特定の1問だけのクイズを開始する */
+function startSingleQuestion(ctx, id){
+  var found = null;
+  ctx.list.forEach(function(x){ if (x.id === id) found = x; });
+  QZ = ctx;
+  if (!found){ quiz = null; vQuizSetup(); return; }
+  startQuiz([found]);
 }
 function vQuizRun(){
   if (!quiz) { vQuizSetup(); return; }
@@ -3603,17 +3613,17 @@ function doSearch(q){
   ETERMS.forEach(function(t){
     var hay = t.t + " " + (t.en || "") + " " + (t.aliases || []).join(" ") + " " + t.d + " " + (t.detail || "");
     var s = scoreText(rawTerms.some(function(x){ return norm(t.t) === x || (t.aliases || []).some(function(a){ return norm(a) === x; }); }) ? 12 : 0, hay);
-    if (s > 0) R.edu.push({ kind: "単語帳", href: "#/edu/term/" + encodeURIComponent(t.t), title: t.t, sub: t.en || "", body: t.d, s: s });
+    if (s > 0) R.edu.push({ kind: "用語集", href: "#/edu/term/" + encodeURIComponent(t.t), title: t.t, sub: t.en || "", body: t.d, s: s });
   });
   ELESSONS.forEach(function(l){
     var body = l.sections.map(function(x){ return x.b.join(" "); }).join(" ");
     var s = scoreText(rawTerms.some(function(x){ return norm(l.title).indexOf(x) >= 0; }) ? 10 : 0, l.title + " " + l.lead + " " + body);
-    if (s > 0) R.edu.push({ kind: "教材", href: "#/edu/lesson/" + l.id, title: l.title, sub: "", body: l.lead + " " + body, s: s });
+    if (s > 0) R.edu.push({ kind: "レッスン", href: "#/edu/lesson/" + l.id, title: l.title, sub: "", body: l.lead + " " + body, s: s });
   });
   EQUESTIONS.forEach(function(qq){
     var hay = qq.q + " " + qq.c.join(" ") + " " + qq.e;
     var s = scoreText(0, hay);
-    if (s > 0) R.edu.push({ kind: "クイズ", href: "#/edu/quiz", title: qq.q, sub: "", body: qq.e, s: s });
+    if (s > 0) R.edu.push({ kind: "クイズ", href: "#/edu/quiz/q/" + qq.id, title: qq.q, sub: "", body: qq.e, s: s });
   });
   Object.keys(R).forEach(function(k){ R[k].sort(function(a, b){ return b.s - a.s; }); R[k] = R[k].slice(0, 8); });
   return { R: R, terms: terms };
@@ -3627,13 +3637,13 @@ function vSearch(q){
     return '<a class="sr-item" href="#/term/' + encodeURIComponent(r.t.t) + '"><span class="sr-kind">用語</span><b>' + esc(r.t.t) + "</b> <span style='color:var(--faint);font-size:13px'>" + esc(r.t.en || "") + "</span><p>" + snippet(r.t.d, res.terms) + "</p></a>";
   }).join("") + "</div>";
   if (R.docs.length) html += '<div class="sr-group"><h2 class="sec">ドキュメント</h2>' + R.docs.map(function(r){
-    return '<a class="sr-item" href="#/doc/' + r.c.id + "/" + r.e.id + '"><span class="sr-kind">文書</span><b>' + esc(r.e.title) + "</b><p>" + snippet(r.body, res.terms) + "</p></a>";
+    return '<a class="sr-item" href="#/doc/' + r.c.id + "/" + r.e.id + '"><span class="sr-kind">ドキュメント</span><b>' + esc(r.e.title) + "</b><p>" + snippet(r.body, res.terms) + "</p></a>";
   }).join("") + "</div>";
   if (R.lessons.length) html += '<div class="sr-group"><h2 class="sec">レッスン</h2>' + R.lessons.map(function(r){
     return '<a class="sr-item" href="#/lesson/' + r.l.id + '"><span class="sr-kind">レッスン</span><b>' + esc(r.l.title) + "</b><p>" + snippet(r.body, res.terms) + "</p></a>";
   }).join("") + "</div>";
-  if (R.questions.length) html += '<div class="sr-group"><h2 class="sec">問題</h2>' + R.questions.map(function(r){
-    return '<a class="sr-item" href="#/quiz"><span class="sr-kind">問題</span><b>' + esc(r.q.q) + "</b><p>" + snippet(r.q.e, res.terms) + "</p></a>";
+  if (R.questions.length) html += '<div class="sr-group"><h2 class="sec">クイズ</h2>' + R.questions.map(function(r){
+    return '<a class="sr-item" href="#/quiz/q/' + r.q.id + '"><span class="sr-kind">クイズ</span><b>' + esc(r.q.q) + "</b><p>" + snippet(r.q.e, res.terms) + "</p></a>";
   }).join("") + "</div>";
   if (R.functions.length) html += '<div class="sr-group"><h2 class="sec">関数</h2>' + R.functions.map(function(r){
     return '<a class="sr-item" href="#/function/' + encodeURIComponent(r.f.name) + '"><span class="sr-kind">関数</span><b>' + esc(r.f.sig) + "</b><p>" + snippet(r.body, res.terms) + "</p></a>";
@@ -3662,13 +3672,19 @@ function route(){
   if (head === "" || head === "home") vHome();
   else if (head === "lessons") vLessons();
   else if (head === "lesson" && parts[1]) vLesson(parts[1]);
-  else if (head === "quiz") { QZ = QZ_IJ; if (quiz && quiz.ctx !== QZ) quiz = null; quiz ? vQuizRun() : vQuizSetup(); }
+  else if (head === "quiz") {
+    if (parts[1] === "q" && parts[2]) startSingleQuestion(QZ_IJ, safeDecode(parts[2]));
+    else { QZ = QZ_IJ; if (quiz && quiz.ctx !== QZ) quiz = null; quiz ? vQuizRun() : vQuizSetup(); }
+  }
   else if (head === "edu"){
     if (parts[1] === "lessons") vEduLessons();
     else if (parts[1] === "lesson" && parts[2]) vEduLesson(parts[2]);
     else if (parts[1] === "terms") vEduTerms();
     else if (parts[1] === "term" && parts[2]) vEduTerm(safeDecode(parts[2]));
-    else if (parts[1] === "quiz") { QZ = QZ_EDU; if (quiz && quiz.ctx !== QZ) quiz = null; quiz ? vQuizRun() : vQuizSetup(); }
+    else if (parts[1] === "quiz") {
+      if (parts[2] === "q" && parts[3]) startSingleQuestion(QZ_EDU, safeDecode(parts[3]));
+      else { QZ = QZ_EDU; if (quiz && quiz.ctx !== QZ) quiz = null; quiz ? vQuizRun() : vQuizSetup(); }
+    }
     else vEduHome();
   }
   else if (head === "docs") vDocs();
