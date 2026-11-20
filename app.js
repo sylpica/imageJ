@@ -400,11 +400,16 @@ function vEduHome(){
     '<a class="tile" href="#/edu/lessons"><span class="n">' + ELESSONS.length + '</span><b>レッスン</b></a>' +
     '<a class="tile" href="#/edu/terms"><span class="n">' + ETERMS.length + '</span><b>用語集</b></a>' +
     '<a class="tile" href="#/edu/quiz"><span class="n">' + EQUESTIONS.length + '</span><b>クイズ</b></a></div>' +
-    '<h2 class="sec">レッスンの構成</h2><div class="card-list">' +
+    '<h2 class="sec">レッスンの構成</h2>' +
     Object.keys(ELCATS).map(function(c){
       var ls = ELESSONS.filter(function(l){ return l.cat === c; });
-      return '<a class="card" href="#/edu/lessons"><span class="tag">' + esc(ELCATS[c]) + '</span> <b>' + ls.map(function(l){ return esc(l.title); }).join("／") + "</b><p>全 " + ls.length + " レッスン</p></a>";
-    }).join("") + "</div>" +
+      if (!ls.length) return "";
+      return '<h3 class="edu-cat">' + esc(ELCATS[c]) + '</h3><div class="card-list">' + ls.map(function(l){
+        return '<a class="card" href="#/edu/lesson/' + l.id + '">' +
+          (store.eduDone.indexOf(l.id) >= 0 ? '<span class="done-mark">✓完了</span> ' : "") +
+          "<b>" + esc(l.title) + "</b></a>";
+      }).join("") + "</div>";
+    }).join("") +
     '<h2 class="sec">あなたの記録</h2><div class="quick" style="padding-top:14px"><p style="margin:0">完了レッスン ' + store.eduDone.length + " / " + ELESSONS.length + "　・　解いたクイズ " + Object.keys(store.eduHist).length + " 問</p></div>" +
     '<p class="notice">本文は教科書・公式ドキュメント等の一次情報を参照して新規に書き起こした独自解説です（翻訳・転載ではありません）。各レッスン・用語に出典を示しています。学習記録はこの端末内にのみ保存されます。</p>';
 }
