@@ -11,7 +11,7 @@ const fails = [];
 const ok = (c, m) => { if (!c) fails.push(m); };
 
 const SRCKEYS = new Set(["work","filt","bin","calc","math","hist","tools","plug","bio","subbg","zproj","color","batch","guide","menus","macrofn","fft","ana","proc","macro","macropdf"]);
-const FIGS = new Set(["bitdepth","histogram","threshold","gamma","kernel-blur","kernel-median","unsharp","scale","roi-mask","particles","zproj","fft"]);
+const FIGS = new Set(["bitdepth","histogram","threshold","gamma","kernel-blur","kernel-median","unsharp","scale","roi-mask","particles","zproj","fft","pseudocolor","gauss","bayer","pinhole","stereo","lightfield","alpha"]);
 
 const L = D.lessons, Q = D.questions, T = D.terms, DOCS = D.docs;
 ok(L.length >= 20 && L.length <= 32, `レッスン数 ${L.length}`);
@@ -167,7 +167,7 @@ for (const c of DOCS) {
   for (const l of EL) {
     ok(D.eduLessonCats[l.cat], `教養教材 ${l.id} カテゴリ不正`);
     ok(l.title && l.lead && Array.isArray(l.sections) && l.sections.length >= 3, `教養教材 ${l.id} 構成不足`);
-    for (const s of l.sections) ok(s.h && Array.isArray(s.b) && s.b.length >= 2, `教養教材 ${l.id} セクション不足`);
+    for (const s of l.sections) { ok(s.h && Array.isArray(s.b) && s.b.length >= 2, `教養教材 ${l.id} セクション不足`); if (s.fig) ok(FIGS.has(s.fig), `教養教材 ${l.id} 図ID不正 ${s.fig}`); }
     ok(Array.isArray(l.points) && l.points.length >= 3, `教養教材 ${l.id} 要点不足`);
     ok(ES[l.src], `教養教材 ${l.id} 出典不正 ${l.src}`);
     for (const t of l.terms || []) ok(etids.has(t), `教養教材 ${l.id} 用語参照不正 ${t}`);

@@ -274,6 +274,86 @@ function figSVG(id){
     s += '<circle cx="320" cy="98" r="5" fill="#b3261e"/>' + txt(320, 192, "中心＝低周波（大まかな構造）／ 外側＝高周波（細部・ノイズ）", 12.5);
     return { svg: s, cap: "FFT の周波数画像では中心ほど低周波。周期的なノイズは中心から離れた点や線として現れる。" };
   }
+  if (id === "pseudocolor"){
+    function grad(y, colorFn){
+      var o = "";
+      for (var i4 = 0; i4 < 32; i4++){ var t = i4 / 31; o += rect(150 + i4 * 12, y, 12.5, 34, colorFn(t)); }
+      return o;
+    }
+    function jet(t){
+      var r = Math.max(0, Math.min(255, Math.round(255 * (1.5 - Math.abs(4 * t - 3)))));
+      var g = Math.max(0, Math.min(255, Math.round(255 * (1.5 - Math.abs(4 * t - 2)))));
+      var b = Math.max(0, Math.min(255, Math.round(255 * (1.5 - Math.abs(4 * t - 1)))));
+      return "rgb(" + r + "," + g + "," + b + ")";
+    }
+    s += txt(140, 62, "グレースケール", 12.5, "end") + grad(40, function(t){ var v = Math.round(255 * t); return "rgb(" + v + "," + v + "," + v + ")"; });
+    s += txt(140, 122, "疑似カラー", 12.5, "end") + grad(100, jet);
+    s += txt(150, 162, "値が小さい", 12) + txt(534, 162, "値が大きい", 12);
+    return { svg: s, cap: "同じ数値でも、色で表すと差が見分けやすくなる。色は表示の割り当てであり、測定値そのものではない。" };
+  }
+  if (id === "gauss"){
+    var pts = [];
+    for (var gx = 0; gx <= 60; gx++){ var xx = (gx / 60 - 0.5) * 6, yy = Math.exp(-xx * xx / 2); pts.push((170 + gx * 5) + "," + (130 - yy * 100).toFixed(1)); }
+    s += '<polyline points="' + pts.join(" ") + '" fill="none" stroke="#0f5e6b" stroke-width="2.5"/>';
+    s += rect(168, 130, 304, 1.5, "#8494a9");
+    var sx = 170 + (0.5 + 1 / 6) * 300;
+    s += '<line x1="' + sx + '" y1="52" x2="' + sx + '" y2="130" stroke="#b3261e" stroke-width="1.5" stroke-dasharray="4 3"/>';
+    s += txt(sx + 6, 48, "σ（広がり）", 12, "start", "#b3261e") + txt(320, 152, "中心から離れるほど重みは小さくなる", 12);
+    var kw = [1, 4, 6, 4, 1];
+    for (var ki = 0; ki < 5; ki++) s += rect(220 + ki * 42, 164, 40, 30, "#eef3f6", "#8494a9") + txt(240 + ki * 42, 184, kw[ki], 13);
+    s += txt(196, 184, "重みの例", 11.5, "end");
+    return { svg: s, cap: "ガウス関数は釣鐘型。σが大きいほど広がり、なだらかになる。フィルタの重みは、この形を離散化して作る。" };
+  }
+  if (id === "bayer"){
+    var pat = [["#7fb069", "#d96a5f"], ["#5b8dd9", "#7fb069"]];
+    for (var br = 0; br < 4; br++) for (var bc = 0; bc < 4; bc++){
+      s += rect(70 + bc * 40, 26 + br * 40, 38, 38, pat[br % 2][bc % 2]) + txt(89 + bc * 40, 50 + br * 40, (br % 2 === 0) ? (bc % 2 === 0 ? "G" : "R") : (bc % 2 === 0 ? "B" : "G"), 14, "middle", "#ffffff");
+    }
+    s += txt(150, 204, "ベイヤー配列（緑が半分）", 12);
+    s += txt(268, 112, "→", 24);
+    for (var dg = 0; dg < 24; dg++){ var dx = 320 + (dg % 6) * 27, dy = 40 + Math.floor(dg / 6) * 27; s += rect(dx, dy, 26, 26, "hsl(" + (200 - dg * 4) + ",45%," + (62 - dg) + "%)"); }
+    s += txt(400, 204, "デモザイキング後の画像", 12);
+    return { svg: s, cap: "各画素は1色だけを記録する。緑が半分、赤と青が4分の1ずつ。足りない色は、周囲の画素から推定する。" };
+  }
+  if (id === "pinhole"){
+    s += '<line x1="90" y1="150" x2="90" y2="50" stroke="#33475e" stroke-width="3"/><polygon points="90,38 83,56 97,56" fill="#33475e"/>';
+    s += txt(90, 172, "物体", 12.5);
+    s += rect(296, 20, 8, 72, "#8494a9") + rect(296, 118, 8, 72, "#8494a9") + txt(300, 204, "ピンホール", 12);
+    s += rect(516, 30, 3, 140, "#33475e");
+    s += '<line x1="522" y1="128" x2="522" y2="76" stroke="#b3261e" stroke-width="3"/><polygon points="522,140 515,124 529,124" fill="#b3261e"/>';
+    s += txt(548, 106, "像（反転）", 12, "start");
+    s += '<line x1="90" y1="50" x2="518" y2="128" stroke="#7fb6bf" stroke-width="1.5" stroke-dasharray="5 3"/>';
+    s += '<line x1="90" y1="150" x2="518" y2="76" stroke="#7fb6bf" stroke-width="1.5" stroke-dasharray="5 3"/>';
+    s += txt(200, 40, "Z", 13, "middle", "#0f5e6b") + txt(410, 40, "f", 13, "middle", "#0f5e6b");
+    return { svg: s, cap: "ピンホールカメラでは、すべての光線が1点を通り、像は上下左右が反転して映る。像の大きさは、f と Z の比で決まる。" };
+  }
+  if (id === "stereo"){
+    s += '<polygon points="320,26 326,40 340,40 330,48 334,62 320,54 306,62 310,48 300,40 314,40" fill="#b3261e"/>';
+    s += txt(352, 48, "3次元点", 12, "start");
+    s += rect(120, 150, 90, 44, "#eef3f6", "#33475e") + txt(165, 178, "左カメラ", 12.5);
+    s += rect(430, 150, 90, 44, "#eef3f6", "#33475e") + txt(475, 178, "右カメラ", 12.5);
+    s += '<line x1="320" y1="48" x2="178" y2="150" stroke="#7fb6bf" stroke-width="1.5"/>';
+    s += '<line x1="320" y1="48" x2="462" y2="150" stroke="#7fb6bf" stroke-width="1.5"/>';
+    s += '<line x1="210" y1="166" x2="430" y2="166" stroke="#8494a9" stroke-width="1.5" stroke-dasharray="5 3"/>';
+    s += txt(320, 160, "基線 B", 12.5, "middle", "#0f5e6b");
+    return { svg: s, cap: "2つのカメラで同じ点を見ると、像の位置がずれる（視差 d）。視差と基線から、奥行き Z = fB/d が求まる。" };
+  }
+  if (id === "lightfield"){
+    s += '<ellipse cx="180" cy="100" rx="16" ry="64" fill="#dfeef1" stroke="#33475e" stroke-width="2"/>';
+    s += txt(180, 186, "主レンズ", 12);
+    for (var mi = 0; mi < 5; mi++) s += '<circle cx="360" cy="' + (52 + mi * 24) + '" r="10" fill="none" stroke="#0f5e6b" stroke-width="1.8"/>';
+    s += txt(360, 186, "マイクロレンズアレイ", 12);
+    s += rect(520, 30, 3, 140, "#33475e") + txt(540, 104, "センサ", 12, "start");
+    s += '<line x1="60" y1="60" x2="180" y2="88" stroke="#7fb6bf" stroke-width="1.5"/><line x1="180" y1="88" x2="360" y2="76" stroke="#7fb6bf" stroke-width="1.5"/><line x1="360" y1="76" x2="521" y2="70" stroke="#7fb6bf" stroke-width="1.5"/>';
+    s += '<line x1="60" y1="140" x2="180" y2="112" stroke="#d99a5f" stroke-width="1.5"/><line x1="180" y1="112" x2="360" y2="124" stroke="#d99a5f" stroke-width="1.5"/><line x1="360" y1="124" x2="521" y2="132" stroke="#d99a5f" stroke-width="1.5"/>';
+    return { svg: s, cap: "ライトフィールドカメラは、小さなレンズの集まりで光の方向を分けて記録する。方向が残るため、撮影後にピントを選び直せる。" };
+  }
+  if (id === "alpha"){
+    s += rect(90, 40, 150, 110, "#7fb6bf") + txt(165, 168, "f1（下の画像）", 12);
+    s += rect(215, 40, 150, 110, "rgba(217,154,95,.55)") + txt(290, 168, "f2（α=0.5で重ねる）", 12);
+    s += txt(420, 100, "g = α×f2 + (1−α)×f1", 14.5, "middle", "#0f5e6b");
+    return { svg: s, cap: "アルファブレンディングは、透明度αの重み付き平均で画像を合成する。αが0か1だけなら、切り抜き（マスク）と同じ働きをする。" };
+  }
   return null;
 }
 function figHTML(fig){
